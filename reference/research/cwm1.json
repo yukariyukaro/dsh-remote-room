@@ -1,0 +1,50 @@
+{
+  "query": "Code With Me guest requirements JetBrains Client browser join no IDE needed",
+  "follow_up_questions": null,
+  "answer": "For Code With Me, guests do not need to have their own JetBrains IDE installed. They only need an invitation link to join a session. The collaborative service can be accessed through a lightweight client that is downloaded when joining a session. This feature is available for all types of sessions, including pair programming, swarm programming, guiding, and mentoring. The host is responsible for managing guests' permissions and ensuring secure access to the project data.",
+  "images": [],
+  "results": [
+    {
+      "url": "https://blog.jetbrains.com/blog/2021/04/12/code-with-me-reaches-public-release",
+      "title": "Code With Me Reaches Public Release - The JetBrains Blog",
+      "content": "Enabling Code With Me takes just a few moments: determine your guests’ permissions and share a link with them. Your peers don’t even need to have their own JetBrains IDE installed – they only need an invitation link to join your session.\n\nCode With Me has a variety of security settings that allow the host to control the level of access to the project data. No one can join a shared session without the host’s approval. Code With Me communicates through an open-source distributed protocol created by JetBrains and uses TLS 1.3 for end-to-end encryption. [...] For businesses that do not want their traffic to go outside of their organization’s network, Code With Me has an on-premises version. The collaborative service can be installed and run securely on a private network. Are you interested in giving Code With Me on-premises a try? Learn more about how to start a 30-day free trial here.\n\nCheck out this video to see the core features of Code With Me in action:\n\n## Pricing and availability\n\nWith the public release, Code With Me introduces three types of licenses. Please note, only hosts need to have a subscription, guests do not need a license to join a shared session.\n\nLet’s look at the benefits of each plan: [...] 2. The Premium Plan works perfectly for bigger teams and those who need more time and space for collaboration. With a Premium subscription, you can also create an unlimited number of shared sessions, but you won’t have any time limit per session. Also, it allows you to invite up to 50 guests. This subscription is available with an annual and monthly billing cycle. The Premium plan starts from $5.00 per month.",
+      "score": 0.8624794,
+      "raw_content": null,
+      "id": "8cfe48-00"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=Lq0fCMCK-Yw",
+      "title": "Introducing Code With Me - Collaborative Coding",
+      "content": "No more repository downloading or pulling changes from someone else's branch. No more time spent on setting up an environment, fixing compile time exceptions, or dependency headaches to get to someone’s current project state. As a guest, you don’t even need a JetBrains IDE installed. Just click the link that the host has shared with you, and you’re all set.\n\nCode With Me is perfect for pair programming, swarm programming, guiding and mentoring.\n\nLearn more at:\n\n### Chapters\n[0:00] Introduction\n[0:30] Joining a session\n[0:48] IDE features\n[1:00] Collaborative editing and code insight\n[1:20] Following participants\n[1:28] Track changes\n[1:47] Run and debug\n[2:02] Testing\n[2:15] Terminal access\n[2:28] Permissions\n[2:43] Security and on-premise server\n[3:00] Wrapping up [...] ### Transcript\n[0:01] [Music]\n[0:04] code with me lets you share your jetbrains ide with others working together to learn review or solve problems all on a single project\n[0:11] no matter the language invite friends and colleagues to join a session and you can all use powerful familiar ide features to collaborate on one project browse\n[0:19] navigate and edit the code see inspections invoke quick fixes remotely run unit tests and run and even debug the application\n[0:26] as a group with integrated video calls joining a session is quick and easy no need to install an ide\n[0:34] just click the link to download a simple lightweight client there's no project to check out from source control all the files stay on the host machine [...] [1:21] participants can be working on different files at the same time so use the jump to or follow commands to see where someone is editing great for pair programming if you're\n[1:29] teaching or leading a review you can force others to follow you and they will see the files you navigate to and full sync mode allows anyone to\n[1:36] take the lead code with me helpfully tracks file edits in separate change lists one for each participant which makes it much easier to review changes\n[1:45] and roll back guests will see the available run configurations and can run or debug a project if they have permissions\n[1:54] everyone will share the debug tool window and see call stacks and local values add watches evaluate expressions and add or remove breakpoints",
+      "score": 0.84246206,
+      "raw_content": null,
+      "id": "eb539e-01"
+    },
+    {
+      "url": "https://www.facebook.com/JetBrains/videos/code-with-me-is-jetbrains-collaborative-development-and-pair-programming-service/807369893235811",
+      "title": "Code With Me is JetBrains' collaborative development ...",
+      "content": "As a guest, you don't even need a JetBrains IDE installed. Just click the link that the host has shared with you, and you're all set.",
+      "score": 0.8201387,
+      "raw_content": null,
+      "id": "225bae-02"
+    },
+    {
+      "url": "https://www.jetbrains.com/legal/docs/code-with-me/license",
+      "title": "Code With Me - Terms of Use",
+      "content": "1. Guests － your behavior, your Guests' behavior, and making sure that you and your Guests do not breach these Terms. Guests must be authorized by you to use Code With Me and have your permission to access and use Code With Me under your Subscription. You are responsible for the permission you give a Guest, their activities in Code With Me, and the Data to which they will have access. You are responsible for monitoring Guests' activity, in particular ensuring that they abide by the terms of, and do not engage in any activity restricted by, these Terms, the Team Tools User Agreement, and the JetBrains Products Acceptable Use Policy (each available at ). If you become aware that a Guest is breaching these terms, you must immediately cancel that Guest's rights to use Code With Me, including [...] 2. Confidentiality － keeping your Data, passwords, Guests' usernames, and Guest 'fingerprints' (access identification information) confidential and secure, and making sure that your Guests do the same.\n3. Security － you are responsible for your own coding environment and the direct or indirect consequences of Guests having access to your system using Code With Me. This includes setting up your security configuration properly and, without limitation, your full responsibility for the following:\n    sharing the invitation link via secure channels and only with Guests who are authorised to access your system\n    verifying Guests' identities before accepting their connection\n    not exposing data to Guests which you do not wish them to have access to or which they should not have access to [...] 1. Depending on your Subscription Plan, you will have access to different features and be subject to certain limits. These features and limits are described on the JetBrains Website and/or the Subscription Confirmation and apply at the time we confirm your purchase of Code With Me or any change in your Subscription Plan, or upon installation of Code With Me. The most important limits include your Subscription Period, the number of Guest connections you (as Host) can host at one time, and the time per Guest session. For non-Enterprise versions of Code With Me, you can change your Subscription Period between monthly and yearly at any time.",
+      "score": 0.7016523,
+      "raw_content": null,
+      "id": "9acc19-03"
+    },
+    {
+      "url": "https://tech.bertelsmann.com/en/blog/articles/intellij-code-with-me-write-code-in-a-collaborative-way",
+      "title": "IntelliJ Code with me - Write code in a collaborative way",
+      "content": "Jet Brains offers the plugin under different types of subscriptions. The free Community plan allows an unlimited number of 30-min collaborative sessions with up to 3 guests. Everyone with an active subscription to a JetBrains IDE automatically gets access to the Premium plan with unlimited session length and a maximum of 50 participants. The Enterprise plan allows even a hundred participants.\n\n## Functionality\n\nAs host you can simply start a new session for a specific project. This will create an invitation link that can be sent to other participants. It is not necessary that the participants themselves have the IntelliJ IDE installed. If a participant does not have intelliJ IDE installed, a free Jet-Brains Client is automatically downloaded.",
+      "score": 0.68420124,
+      "raw_content": null,
+      "id": "a0161f-04"
+    }
+  ],
+  "response_time": 4.63,
+  "request_id": "d0eb5932-882e-4867-8d14-07b3a873d336"
+}

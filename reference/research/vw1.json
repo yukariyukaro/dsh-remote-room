@@ -1,0 +1,42 @@
+{
+  "query": "VS Code for the Web limitations no terminal web extensions supported capabilities",
+  "follow_up_questions": null,
+  "answer": "VS Code for the Web does not support terminal web extensions or capabilities due to its browser-based nature, which inherently limits certain functionalities such as running a terminal or debugger. The browser environment restricts running code that requires a runtime environment, like compiling or debugging Rust or Go applications. Only a subset of extensions can run in the web version, and those that require a terminal or other unsupported features will not be available. The sources indicate that for full capabilities, including terminal access and running unsupported extensions, users are recommended to switch to the desktop application or GitHub Codespaces.",
+  "images": [],
+  "results": [
+    {
+      "title": "Visual Studio Code for the Web",
+      "url": "https://code.visualstudio.com/docs/remote/vscode-web",
+      "content": "You can determine the level of language support in your current file through the Language Status Indicator in the Status bar:\n\n## Limitations\n\nSince VS Code for the Web runs completely within the browser, some experiences will naturally be more constrained when compared to what you can do in the desktop app. For example, the terminal and debugger are not available, which makes sense since you can't compile, run, and debug a Rust or Go application within the browser sandbox.\n\n### Extensions\n\nOnly a subset of extensions can run in the browser. You can use the Extensions view to install extensions in the web, and extensions that cannot be installed will have a warning icon and Learn Why link. We expect more extensions to become enabled over time. [...] ## Relationship to VS Code Desktop\n\nVS Code for the Web provides a browser-based experience for navigating files and repositories and committing lightweight code changes. However, if you need access to a runtime to run, build, or debug your code, you want to use platform features such as a terminal, or you want to run extensions that aren't supported in the web, we recommend moving your work to the desktop application, GitHub Codespaces, or using Remote - Tunnels for the full capabilities of VS Code. In addition, VS Code Desktop lets you use a full set of keyboard shortcuts not limited by your browser.\n\nWhen you're ready to switch, you'll be able to \"upgrade\" to the full VS Code experience with a few clicks. [...] VS Code for the Web has many of the features of VS Code Desktop that you love, including search and syntax highlighting while browsing and editing, along with extension support to work on your codebase and make simpler edits. In addition to opening repositories, forks, and pull requests from source control providers like GitHub and Azure Repos, you can also work with code that is stored on your local machine.\n\nVS Code for the Web runs entirely in your web browser, so there are certain limitations compared to the desktop experience, which you can read more about below.\n\nThe following video gives a quick overview of Visual Studio Code for the Web.\n\n## Relationship to VS Code Desktop",
+      "score": 0.7361925,
+      "raw_content": null,
+      "id": "f61614-00"
+    },
+    {
+      "title": "VS Code for the Web - Azure",
+      "url": "https://code.visualstudio.com/docs/azure/vscodeforweb",
+      "content": "No terminal access beyond Cloud Shell\n Limited support for some native extensions or language features\n No offline support\n\n## Troubleshooting\n\nIf you encounter any issues with VS Code for the Web – Azure, please log an issue in our GitHub repository\n\n### Connection issue\n\nIf you're unable to connect to , you can usually fix it by resetting your Azure Cloud Shell. This can be done from the Azure Portal.\n\nOpen Cloud Shell in the Azure Portal using the button in the top right corner.\n\nNext, in the Settings dropdown, select Reset User Settings.\n\nOnce finished you should see this screen.\n\n### Gathering logs [...] Key features:\n\n  + Model catalog with rich generative AI models sources (GitHub, ONNX, OpenAI, Anthropic, Google, ...)\n  + Bring Your Own Models from remotely hosted model, or Ollama models that are running locally\n  + Playground for model inference or testing via chat\n  + Attachment support for multi-modal language models\n  + Batch run prompts for selected AI models\n  + Evaluate an AI model with a dataset for supported popular evaluators like F1 score, relevance, similarity, coherence, and more\n Rapid prototyping with VS Code extensions and Python\n Create, Edit, and Deploy an Agents with Azure Copilot\n\n## Limitations\n\nAlthough VS Code for the Web is almost at parity with VS Code on the desktop, there are some limitations to the development environment:",
+      "score": 0.7361925,
+      "raw_content": null,
+      "id": "87c00b-01"
+    },
+    {
+      "title": "VlabsVsCodeTool/docs/design_doc_limitations_web ... - GitHub",
+      "url": "https://github.com/Dileepadari/VlabsVsCodeTool/blob/main/docs/design_doc_limitations_web_environment_doc.md",
+      "content": "Design documents: Understanding the limitations of VS code web environment Limitation - Browser sandbox While a browser sandbox is effective in enhancing security, it also... Nov 20, 2025 · Learn how to develop faster with VS Code for the Web - Azure. Build and deploy code seamlessly in your browser. Jan 1, 2025 · Limitations of VS Code for the Web No Native Debugging: Debugging capabilities are limited compared to the desktop version. Remote debugging is supported for certain... Dec 20, 2023 · VS Code for the Web runs entirely in your web browser, so there are certain limitations compared to the desktop experience Relationship to VS Code Desktop VS Code for the... Jan 22, 2026 · Visual Studio Code for the Web provides a free, zero-install Microsoft Visual Studio Code experience running entirely in your browser, allowing you to browse site code",
+      "score": 0.72278196,
+      "raw_content": null,
+      "id": "cfd40d-02"
+    },
+    {
+      "title": "How to Use Visual Studio Code for the Web - visual-studio-code",
+      "url": "https://salivity.github.io/visual-studio-code/article/how-to-use-visual-studio-code-for-the-web",
+      "content": "Visual Studio Code for the Web provides a free, zero-install version of the popular VS Code editor that runs entirely inside your web browser. This article will show you... VS Code for the Web runs entirely in your web browser, so there are certain limitations compared to the desktop experience, which you can read more about below. The... Aug 14, 2026 · VS Code Online is Visual Studio Code for the Web at vscode.dev: a free browser editor for repository browsing and lightweight edits. It does not include a normal... Design documents: Understanding the limitations of VS code web environment Limitation - Browser sandbox While a browser sandbox is effective in enhancing security, it also... Nov 20, 2025 · Learn how to develop faster with VS Code for the Web - Azure. Build and deploy code seamlessly in your browser. Jan 1, 2025 · Limitations of VS Code for the Web No Native Debugging: Debugging capabilities are limited compared to the desktop version. Remote debugging is supported for certain... Dec 20, 2023 · VS Code for the Web runs entirely in your web browser, so there are certain limitations compared to the desktop experience Relationship to VS Code Desktop VS Code for the... Jan 22, 2026 · Visual Studio Code for the Web provides a free, zero-install Microsoft Visual Studio Code experience running entirely in your browser, allowing you to browse site code",
+      "score": 0.72254705,
+      "raw_content": null,
+      "id": "c21de5-03"
+    }
+  ],
+  "response_time": 3.52,
+  "request_id": "1791042c-a909-4b61-b057-2db41bbda58d"
+}

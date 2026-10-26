@@ -6,3 +6,8 @@ dist/
 .DS_Store
 Thumbs.db
 *.log
+
+# 只读参考仓库：浅克隆，不进版本库（见 reference/README.md）
+/reference/deepseek-harness/
+/reference/open-remote-ssh/
+/reference/shellhub/

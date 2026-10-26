@@ -43,18 +43,26 @@
 
 任一项超标就上 WebRTC 直连，mux 与协议一行不改。
 
-## 参考实现（本地克隆，不在本仓库内）
+## 参考实现（只读克隆，已 gitignore）
 
 | 项目 | 本地路径 | 用来看什么 |
 |---|---|---|
-| DSH 源码（MIT） | `../vendor/deepseek-harness` | `packages/ssh/*`（远端 provider 形状）、`fs/fs-sandbox`、`sandbox/sandbox-policy` |
-| open-remote-ssh | `../vendor/open-remote-ssh` | 隧道 = 本地监听 + `forwardOut`、重连判据、`execChannel` 不分配 PTY |
-| ShellHub（Apache-2.0） | `../vendor/shellhub` | 反向隧道、按流协商协议名、设备端不 `Listen` |
+| DSH 源码（MIT，`22ddee37`） | `reference/deepseek-harness/` | `packages/ssh/*`（远端 provider 形状）、`fs/fs-sandbox`、`sandbox/sandbox-policy`、`subprocess/subprocess` 的终端句柄 |
+| open-remote-ssh（MIT，`6b5b86f`） | `reference/open-remote-ssh/` | 隧道 = 本地监听 + `forwardOut`、重连判据、`execChannel` 不分配 PTY |
+| ShellHub（Apache-2.0，`0d847ff`） | `reference/shellhub/` | 反向隧道、按流协商协议名、设备端不 `Listen` |
+
+详见 [`reference/README.md`](reference/README.md)（含具体文件清单与早期检索原文索引）。
 
 ## 目录
 
 ```
-docs/                      设计文档
-  dsh-remote-workspace-plan.md   当前方案 v5
-  archive/                       历史版本
+docs/                          设计文档
+  dsh-remote-workspace-plan.md     当前方案 v5
+  archive/                         历史版本（v1–v4）
+reference/                     只读参考（克隆不进版本库）
+  deepseek-harness/              DSH 源码
+  open-remote-ssh/               TS 版 Remote-SSH
+  shellhub/                      反向隧道参照
+  research/                      早期检索原文 + DSH preset patch 样例
 ```
+
