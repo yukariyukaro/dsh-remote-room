@@ -31,6 +31,7 @@
 | 传输 | Node 全局 `WebSocket` → 中继（默认 Cloudflare DO，可换自建/WebRTC） |
 | 多路复用 | 自写，约 60–80 行，无窗口（背压走 `Readable.pause()`） |
 | 权限 | 复用 `dsh-sandbox-policy` 的模式 + `dsh-fs-sandbox` 的写围栏 |
+| **工具** | **零开发**：房间是一个 agent preset，在隔离 realm 里换掉 `ctx.fs` / `ctx.subprocess`，`read`/`write`/`edit`/`bash` 原样复用 |
 | 终端 | 房主 `ctx.subprocess.spawnTerminal` |
 
 ## 接下来：M0
