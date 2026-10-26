@@ -443,15 +443,32 @@ DSH 里已经有现成答案：**agent preset**。
 
 | provider | 实现 | 规模 |
 |---|---|---|
-| `provider-fs` | `ctx.fs` 远端实现，继承 `FileSystem` 基类；照 `fs-ssh` 写 | **13 个抽象方法**：`resolve`/`processPath`/`fileUrl`/`contains`/`stat`/`lstat`/`readText`/`streamText`/`readBytes`/`readByteRange`/`listDir`/`writeText`/`editText` |
-| `provider-subprocess` | `ctx.subprocess` 远端实现，`spawnTerminal` 转发到房主 | ~6 个方法 |
+| `provider-fs` | `ctx.fs` 远端实现，继承 `FileSystem` 基类；照 `fs-ssh` 写 | **≈120 行**——`fs-ssh` 全文 107 行，13 个方法每个就是一行 `this.call('fs.xxx', …)` 转发 |
+| `provider-subprocess` | `ctx.subprocess` 远端实现，`spawnTerminal` 转发到房主 | ≈250 行（`subprocess-ssh` 17 KB，含进程句柄、终端、信号） |
 | `provider-sandbox` | 可选。`danger-full-access` 直通；受限档要给 exec 才需要 | 小 |
 
-`watch()` 不覆写——基类默认以 `FS_IO_ERROR` 拒绝，和 `fs-ssh` 一致。
+`watch()` 不覆写——基类默认以 `FS_IO_ERROR` 拒绝，和 `fs-ssh` 一致。`contains` 也不用往返：`fs-ssh` 用 `posix.relative` 在本地算，我们也一样。
 
-这才是真实工作量：**两个 provider，不是六个工具**。而且 `ctx.fs` 一写完，右栏文件树、`edit` 的 stale 检测、`grep`、diff 展示全部免费。
+这才是真实工作量：**两个 provider 约 400 行，不是六个工具**。而且 `ctx.fs` 一写完，右栏文件树、`edit` 的 stale 检测、`grep`、diff 展示全部免费。
 
-### 5.4 终端开在房主
+### 5.4 为什么不是直接用 `fs-ssh`
+
+既然 DSH 已经有 `fs-ssh` / `subprocess-ssh` / `sandbox-ssh`，能不能直接挂上去？查过之后答案是**不能，但原因不是"我们用了 WSS"**。
+
+先澄清一件事：**远端 fs provider 这笔开销跟传输方式无关**。DSH 自己为了 SSH 也写了这一份——换成任何传输都要有人当那个"client 半边"。
+
+真正卡住的是这两条：
+
+| 障碍 | 事实 |
+|---|---|
+| `dsh-ssh` 要真的 sshd | 它 `spawn` 用户的 OpenSSH 客户端（Config 是「OpenSSH host alias」），再用**本地 stream socket**（`createConnection({ path })`）接转发通道。房主没有可达 sshd，这条就断 |
+| 远端要装 helper 二进制 | `ssh-helper-runtime` 是预编译可执行文件，装到远端后客户端会 `sha256` 校验摘要（`helper.ts`：`Installed entry whose digest is compared by the client`）。这正是 VS Code Server 那一套 bootstrap——我们方案里最想省掉的一步 |
+
+而 helper 干的事，房主的 DSH 本来就在干（`fs-local` + `fs-sandbox` 已经在他进程里）。**所以我们要写的不是 `fs-ssh` 的替代品，而是一条通往已在运行的服务的最薄适配层。**
+
+> 唯一的白拿路径：房主侧内嵌一个 `ssh2` 的 **Server**（不 `Listen`，直接喂我们的 mux 流），隧道里跑真 SSH，然后 `fs-ssh`/`subprocess-ssh`/`sandbox-ssh` 原样复用。代价是仍要部署 helper、多一层协议栈、以及要给房主开一个 loopback 入口。列为 §9 的可选后续，不进 v1。
+
+### 5.5 终端开在房主
 
 房主侧用 `ctx.subprocess.spawnTerminal(spec)`：它**不要求 Agent 作用域**，直接返回 `{ pid, output, write, resize, inspectForeground, signalForeground, terminate, done }`。
 
@@ -461,7 +478,7 @@ DSH 里已经有现成答案：**agent preset**。
 
 `output` 是 `Readable`、`write` 收 `string`（文本语义）——这两条决定了背压与切分方式，见 §3.5 与 §6.1。
 
-### 5.5 文件树与模块划分
+### 5.6 文件树与模块划分
 
 ```
 dsh-remote-room/
@@ -633,6 +650,7 @@ M0/M1 是两个必须先过的验证，**不要**在它们通过前写 UI。M1 �
 | 自写 mux 的正确性 | 帧边界错会让终端吐乱码 | 单测覆盖分片、半包、乱序、并发开流、UTF-8 边界切分；先只跑 ctl+fs |
 | 中继延迟 | 终端手感变钝（多一跳） | M0 实测 RTT；超标就上 WebRTC 直连，协议不动 |
 | 中继在境内可达性 | 默认 Cloudflare 可能慢或不可达 | relay 地址做成配置；备选自建 Node 转发，协议一行不改 |
+| 想白拿 SSH 家族（`fs-ssh` 等）的诱惑 | 会拖进 sshd 与 helper 部署 | v1 不碰；要做得接受「房主装 helper 二进制」，见 §5.4 |
 | DO 免费额度 | 大流量终端可能顶到上限 | M0 里量一次；超了就降级为「终端默认关」 |
 | Windows ⇄ POSIX 路径 | 房主 Windows、访客 Linux 时路径语义不一致 | 路径一律当**房主坐标**的不透明字符串；只在房主侧规范化 |
 | 右栏已 17 个 tab | 再加一个会更挤 | 接受；用户自己会关 |
