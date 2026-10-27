@@ -7,7 +7,7 @@ import { failureOf } from './bridge.ts'
 import { Callout, Empty, Pill } from './ui.tsx'
 import { Terminal } from './Terminal.tsx'
 import {
-  IconChevronRightOutlineRegular, IconFolderOpenOutlineRegular, IconRefreshOutlineRegular, IconShieldOutlineRegular,
+  FileTypeIcon, IconFolderOpenOutlineRegular, IconRefreshOutlineRegular, IconShieldOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export interface RoomViewProps {
@@ -55,8 +55,8 @@ function Tree({ t, room, api, open }: Pick<RoomViewProps, 't' | 'room' | 'api' |
                 else if (entry.type === 'file') open?.(fileAddress({ roomId: room.id, epoch: room.epoch, path: next }))
               }}>
               {entry.type === 'directory'
-                ? <IconFolderOpenOutlineRegular size={16} />
-                : <IconChevronRightOutlineRegular size={16} />}
+                ? <IconFolderOpenOutlineRegular size={17} />
+                : <FileTypeIcon path={entry.name} size={17} />}
               <span className="rr-rowname">{entry.name}</span>
               {entry.size !== undefined ? <span className="rr-rowsize">{entry.size.toLocaleString()} B</span> : null}
             </button>

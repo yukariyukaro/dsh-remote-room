@@ -164,21 +164,8 @@ export function Preview({ t, api, useTabInfo, useRoomState, useResource }: Previ
   const epochShort = ref === undefined ? undefined : ref.epoch.slice(0, 8)
   return <section className="rr rr-preview">
     <style>{styles}</style>
-    <header className="rr-previewhead">
-      <div className="rr-previewtitle">
-        <span className="rr-kind" data-kind={markdown ? 'markdown' : image ? 'image' : 'code'}>{label}</span>
-        <p className="rr-previewpath" title={fullPath}>
-          {directory === '' ? null : <span className="rr-dirname">{directory}/</span>}
-          <span className="rr-basename">{basename}</span>
-        </p>
-        <p className="rr-previewmeta">{roomId}{epochShort === undefined ? null : <> · {t('epoch')} {epochShort}</>}</p>
-      </div>
-      <div className="rr-buttons">
-        {!image && !markdown ? <button className="rr-btn" aria-pressed={wrap} onClick={() => setWrap(value => !value)}>{t('wrap')}</button> : null}
-        <button className="rr-btn" disabled={!authorized || loading} onClick={() => setRevision(value => value + 1)}>{t('reload')}</button>
-      </div>
-    </header>
-    {!authorized ? <p className="rr-banner" data-tone="warn" role="status">{content ? t('stale') : room ? t('noPermission') : t('noRoom')}</p> : null}
+    {/* Content only: the tab already names the file, so no private chrome is added here. */}
+    {!authorized ? <p className="rr-stalechip" role="status">{content ? t('stale') : room ? t('noPermission') : t('noRoom')}</p> : null}
     {failure ? <div className="rr-bannerwrap"><ErrorNotice error={failure} t={t} /></div> : null}
     <div className="rr-previewbody" data-image={image} data-wrap={wrap} data-rr-renderer={content?.kind === 'text' ? markdown ? 'markdown' : 'code' : image ? 'image' : 'none'}>
       {content === undefined && loading ? <div className="rr-skeleton" aria-hidden="true"><span /><span /><span /><span /></div> : null}

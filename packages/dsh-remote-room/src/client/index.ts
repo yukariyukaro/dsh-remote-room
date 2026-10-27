@@ -5,6 +5,8 @@ import { createRoomClient } from './state.ts'
 import type { ClientSnapshot } from './state.ts'
 import { RoomPanel } from './RoomPanel.tsx'
 import { Preview } from './Preview.tsx'
+import { RoomGlyph } from './glyph.tsx'
+import { IconCodeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { DOCUMENT_KIND, PROTOCOL, ROOM_KIND, parseFileAddress } from './contracts.ts'
 import { en, zh, translator } from './locale.ts'
 import type { Translate } from './locale.ts'
@@ -14,7 +16,7 @@ interface ClientContext {
   effect(effect: () => (() => void) | void, label?: string): unknown
   get(name: string): unknown
   locale: { register(namespace: string, dictionaries: object): () => void; bind(namespace: string): Translate }
-  sidebarRightTabs: { register(definition: { id: string; kind: string; keepMounted?: boolean; patterns?: string[]; priority?: 'extension'; canOpen?: (address: string) => boolean; title: (address: string) => string; guide?: { id: string; order: number; title: () => string; description: () => string }[] }): () => void }
+  sidebarRightTabs: { register(definition: { id: string; kind: string; keepMounted?: boolean; patterns?: string[]; priority?: 'extension'; icon?: ComponentType<{ size?: number; className?: string }>; canOpen?: (address: string) => boolean; title: (address: string) => string; guide?: { id: string; order: number; title: () => string; description: () => string; icon?: ComponentType<{ size?: number; className?: string }> }[] }): () => void }
   slots: { inject(name: string, factory: () => (() => void)): () => void; register<P>(options: object, component: ComponentType<P>): () => void }
   resources: { register(provider: { protocol: string; open(address: string, context: { signal: AbortSignal }): AsyncIterable<ResourceFrame> }): () => void }
 }
@@ -45,8 +47,8 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.effect(() => ctx.locale.register('remoteRoom', { en, zh }), 'remote-room: dictionaries')
   ctx.effect(() => { const lifetime = new AbortController(); const stop = client.start(lifetime.signal); return () => { lifetime.abort(); stop() } }, 'remote-room: Host observation')
-  ctx.effect(() => ctx.sidebarRightTabs.register({ id: ROOM_ID, kind: ROOM_KIND, keepMounted: true, title: () => t('title'), guide: [{ id: 'connect', order: 45, title: () => t('title'), description: () => t('guide') }] }), 'remote-room: workbench type')
-  ctx.effect(() => ctx.sidebarRightTabs.register({ id: DOCUMENT_ID, kind: DOCUMENT_KIND, keepMounted: true, patterns: ['dsh-resource://remote-room-file/**'], priority: 'extension', canOpen: address => parseFileAddress(address) !== undefined, title: titleOf }), 'remote-room: remote document type')
+  ctx.effect(() => ctx.sidebarRightTabs.register({ id: ROOM_ID, kind: ROOM_KIND, keepMounted: true, icon: RoomGlyph, title: () => t('title'), guide: [{ id: 'connect', order: 45, title: () => t('title'), description: () => t('guide'), icon: RoomGlyph }] }), 'remote-room: workbench type')
+  ctx.effect(() => ctx.sidebarRightTabs.register({ id: DOCUMENT_ID, kind: DOCUMENT_KIND, keepMounted: true, icon: IconCodeOutlineRegular, patterns: ['dsh-resource://remote-room-file/**'], priority: 'extension', canOpen: address => parseFileAddress(address) !== undefined, title: titleOf }), 'remote-room: remote document type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: ROOM_ID, locale: 'remoteRoom', inject: () => face }, RoomPanel)), 'remote-room: workbench body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: DOCUMENT_ID, locale: 'remoteRoom', inject: () => ({ api, t, hooks: { roomState: client.source } }) }, Preview)), 'remote-room: document body')
   // A root settings entry works without a mounted conversation. Remote files remain disabled here.
