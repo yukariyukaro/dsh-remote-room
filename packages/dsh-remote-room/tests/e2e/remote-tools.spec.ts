@@ -16,6 +16,12 @@ import { BoundedMemoryAuditStore } from '../../src/host/audit-store.ts'
 import { Config, type Config as RoomConfig } from '../../src/config.ts'
 import { object } from '../../src/protocol.ts'
 
+try { process.loadEnvFile(new URL('../../.env', import.meta.url)) } catch { /* .env is optional */ }
+const publicRelay = process.env.RR_PUBLIC_RELAY ?? process.env.DSH_REMOTE_ROOM_RELAY ?? ''
+const publicToken = process.env.RR_RELAY_TOKEN ?? process.env.DSH_REMOTE_ROOM_RELAY_TOKEN ?? ''
+// A public relay is a network round trip; the fixture is a local socket.
+const WAIT = publicRelay === '' ? 5_000 : 30_000
+
 const require = createRequire(import.meta.url)
 const toolsRequire = createRequire(require.resolve('@deepseek-ai/dsh-tools'))
 const policyRequire = createRequire(require.resolve('@deepseek-ai/dsh-sandbox-policy'))
@@ -46,7 +52,8 @@ describe('remote tools / real registry and two-end remote file capability', () =
   let guest: RemoteRoomManager
   let backend: FileRoomBackend
   let audit: BoundedMemoryAuditStore
-  let relay: Awaited<ReturnType<typeof startRelay>>
+  let relay: Awaited<ReturnType<typeof startRelay>> | undefined
+  let relayUrl = ''
   let disposeTools: () => void
   let roomId: string
   let epoch: string
@@ -71,8 +78,11 @@ describe('remote tools / real registry and two-end remote file capability', () =
     await guestCtx.plugin(SessionProjectionRegistry)
     await guestCtx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: local })
     await guestCtx.plugin(SandboxedFileSystem, { cwd: local })
-    relay = await startRelay({ host: '127.0.0.1', port: 0 })
-    const config = Config({ relayUrl: relay.url, maxFileBytes: 8 * 1024 * 1024 }) as RoomConfig
+    // Default: a loopback fixture. With RR_PUBLIC_RELAY set, the same suite runs over the
+    // deployed public relay, so real writes cross Cloudflare instead of the local socket.
+    relay = publicRelay === '' ? await startRelay({ host: '127.0.0.1', port: 0 }) : undefined
+    relayUrl = publicRelay !== '' ? publicRelay : relay!.url
+    const config = Config({ relayUrl, maxFileBytes: 8 * 1024 * 1024 }) as RoomConfig
     audit = new BoundedMemoryAuditStore()
     host = new RemoteRoomManager(config, () => {
       backend = new FileRoomBackend(hostCtx.fs, audit, config)
@@ -80,13 +90,13 @@ describe('remote tools / real registry and two-end remote file capability', () =
     })
     guest = new RemoteRoomManager(config, () => { throw new Error('Guest must never instantiate host authority') })
     disposeTools = registerRemoteTools(guestCtx, guest)
-    const created = await host.create({ relay: relay.url, root, name: 'test', mode: 'workspace-write' })
+    const created = await host.create({ relay: relayUrl, ...(publicToken === '' ? {} : { createToken: publicToken }), root, name: 'test', mode: 'workspace-write' })
     roomId = created.room.id
-    await vi.waitFor(() => expect(host.state().rooms[0]?.phase, JSON.stringify(host.state())).toBe('authenticating'))
+    await vi.waitFor(() => expect(host.state().rooms[0]?.phase, JSON.stringify(host.state())).toBe('authenticating'), { timeout: WAIT })
     await guest.join(created.invitation)
-    await vi.waitFor(() => expect(host.state().rooms[0]?.phase).toBe('pending'))
+    await vi.waitFor(() => expect(host.state().rooms[0]?.phase).toBe('pending'), { timeout: WAIT })
     await host.approve(roomId)
-    await vi.waitFor(() => expect(guest.state().rooms[0]?.phase).toBe('authorized'))
+    await vi.waitFor(() => expect(guest.state().rooms[0]?.phase).toBe('authorized'), { timeout: WAIT })
     epoch = guest.state().rooms[0]!.epoch
     input = { roomId, epoch, path: path.join(root, 'same.txt') }
   })
@@ -226,12 +236,12 @@ describe('remote tools / real registry and two-end remote file capability', () =
 
   it('lets the host enforce readonly permissions despite guest local full-access policy', async () => {
     await host.revoke(roomId)
-    const created = await host.create({ relay: relay.url, root, name: 'test', mode: 'read-only' })
-    await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('authenticating'))
+    const created = await host.create({ relay: relayUrl, ...(publicToken === '' ? {} : { createToken: publicToken }), root, name: 'test', mode: 'read-only' })
+    await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('authenticating'), { timeout: WAIT })
     await guest.join(created.invitation)
-    await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('pending'))
+    await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('pending'), { timeout: WAIT })
     await host.approve(created.room.id)
-    await vi.waitFor(() => expect(guest.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('authorized'))
+    await vi.waitFor(() => expect(guest.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('authorized'), { timeout: WAIT })
     const readonly = { ...input, roomId: created.room.id, epoch: created.room.epoch }
     const read = data(await call('remote_read', readonly))
     expect(code(await call('remote_write', { ...readonly, content: 'BAD', expected: { kind: 'replaceIfVersion', version: read.observedVersion } }))).toBe('FS_SANDBOX_DENIED')
@@ -245,7 +255,7 @@ describe('remote tools / real registry and two-end remote file capability', () =
     }
     expect(code(await call('remote_read', { ...input, path: path.join(local, 'same.txt') }))).toBe('FS_SANDBOX_DENIED')
     await host.revoke(roomId)
-    await vi.waitFor(() => expect(guest.state().rooms[0]?.phase).not.toBe('authorized'))
+    await vi.waitFor(() => expect(guest.state().rooms[0]?.phase).not.toBe('authorized'), { timeout: WAIT })
     expect(code(await call('remote_read', input))).toBe('NOT_AUTHORIZED')
     expect(await readFile(path.join(local, 'same.txt'), 'utf8')).toBe('LOCAL SENTINEL')
   })
