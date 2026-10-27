@@ -58,7 +58,8 @@ export function RoomPanel(props: RoomPanelProps): JSX.Element {
     // Preferences carry the remembered relay and directory; render once, not twice with a stale first pass.
     body = <div className="rr-stage"><p className="rr-hint">{t('loading')}</p></div>
   } else if (!room) {
-    body = <ShareHome t={t} initialRoot={settings?.lastRoot || cwd || ''} settings={settings} busy={busy}
+    // The active workspace is the default directory; a remembered pick only fills the gap.
+    body = <ShareHome t={t} initialRoot={cwd || settings?.lastRoot || ''} settings={settings} busy={busy}
       pickDirectory={props.pickDirectory} onSettings={save}
       onCreate={input => run(async () => { const result = await mutate(api.create(input)); setInvitation(result.invitation) })}
       onJoin={invitationUrl => run(async () => { await mutate(api.join(invitationUrl)); await refresh() })} />

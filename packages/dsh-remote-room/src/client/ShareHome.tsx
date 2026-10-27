@@ -31,13 +31,22 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
   const [invitation, setInvitation] = useState('')
   const [picking, setPicking] = useState(false)
   const [editingRelay, setEditingRelay] = useState(relay === '')
+  const [pickerNote, setPickerNote] = useState('')
   // The host is enough to recognise a deployment; the full URL stays behind the edit affordance.
   const relayHost = ((): string => { try { return new URL(relay).host } catch { return relay } })()
 
+  /** Always answers: a click must never look dead, even when no OS chooser is reachable. */
   const choose = (): void => {
-    if (!pickDirectory) { setManual(true); return }
-    setPicking(true)
-    void pickDirectory().then(found => { if (found) { setRoot(found); onSettings({ lastRoot: found }) } }, () => setManual(true)).finally(() => setPicking(false))
+    setPickerNote('')
+    setManual(value => !value)
+  }
+  const browse = (): void => {
+    if (!pickDirectory) { setManual(true); setPickerNote(t('pickerUnavailable')); return }
+    setPicking(true); setPickerNote('')
+    void pickDirectory().then(
+      found => { if (found) { setRoot(found); onSettings({ lastRoot: found }) } else { setManual(true); setPickerNote(t('pickerUnavailable')) } },
+      () => { setManual(true); setPickerNote(t('pickerUnavailable')) },
+    ).finally(() => setPicking(false))
   }
   const hint = mode === 'read-only' ? t('readOnlyHint') : mode === 'workspace-write' ? t('workspaceWriteHint') : t('fullAccessHint')
   const scopeHint = scope === 'lan' ? t('scopeHintLan') : t('scopeHintPublic')
@@ -52,10 +61,18 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
 
       <Card>
         <CardHead title={t('directory')} accessory={
-          <button type="button" className="rr-btn" data-variant="ghost" disabled={busy || picking} onClick={choose}>
-            <IconFolderOpenOutlineRegular size={16} />{picking ? t('preparing') : t('change')}
-          </button>
+          <div className="rr-actions">
+            {pickDirectory
+              ? <button type="button" className="rr-btn" data-variant="ghost" disabled={busy || picking} onClick={browse}>
+                <IconFolderOpenOutlineRegular size={16} />{picking ? t('preparing') : t('browse')}
+              </button>
+              : null}
+            <button type="button" className="rr-btn" data-variant="ghost" disabled={busy} aria-expanded={manual} onClick={choose}>
+              {manual ? t('collapse') : t('change')}
+            </button>
+          </div>
         } />
+        {pickerNote ? <p className="rr-hint" role="status">{pickerNote}</p> : null}
         {manual
           ? <input className="rr-input rr-mono" value={root} placeholder={t('pathPlaceholder')} spellCheck={false} autoComplete="off"
             onChange={event => setRoot(event.target.value)} onBlur={() => { if (root.trim() !== '') onSettings({ lastRoot: root.trim() }) }} />
