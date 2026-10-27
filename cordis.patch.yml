@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-remote-room
+      name: '@local/dsh-remote-room'
+      config: {}

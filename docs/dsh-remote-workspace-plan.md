@@ -1,674 +1,424 @@
-# DSH 远程工作区插件 · 方案 v5
+# DSH 远程工作区插件 · 方案 v6
 
-> 让 A 帮 B 修电脑：B 的 DSH 开一个房间，把「某个目录 + 可选终端」借给 A，A 用自己的 DSH 里的 agent 干活。
-> 三种档位直接沿用 DSH 自己的沙箱模式名：`read-only` / `workspace-write` / `danger-full-access`。
+> 房主把目录与可选的进程执行能力借给访客，agent、模型和 API key 留在访客自己的 DSH。房主只安装插件并保持 DSH 在线，不向访客公开 DSH Web。
+>
+> 状态：**已实现并有真实端到端证据**（见 `development-status.md`）。本文档保留为架构与边界基准：其中 D5 的「替换 fs/subprocess provider」未采用，实现改为八个显式 `remote_*` 工具 + 独立房间 UI（理由与覆盖见 `development-status.md`）；传输层以 `decisions/0003-desktop-compatible-mtls.md` 为准，取代本文档 §5.1 的早期握手假设。v5 原文保存在 `archive/dsh-remote-workspace-plan.v5.md`，不代表当前方案。
 
----
+## 0. 范围与决策
 
-## 0. 一页速览
+### 0.1 产品约束
 
-### 0.1 它是什么
-
-一个 DSH 插件，装在两台机器上：
-
-- **房主（能上网、被求助的一方）**：选一个目录，选一个档位，点「开房」。插件开一条**出站** WSS 连接到中继，不监听任何端口。
-- **访客（帮忙的一方）**：拿到邀请链接，粘进 DSH。右栏出现一个 tab，能看文件树、读文件、改文件；档位是 `danger-full-access` 时还能开终端。
-- **agent 在访客这边**。房主不跑 agent、不跑会话、不开 Web UI，只提供能力。
+- 两端都安装插件；房主不需要 agent 或 agent 会话，不新增房主入站监听端口。
+- 房主可以使用自己的本地 DSH UI。禁止的是向访客公开房主 DSH Web/API，不是禁止房主使用本机控制面。
+- 访客入房时由房主授权一次，不做逐操作审批；房主始终可以撤销。
+- 文件操作、普通命令和 PTY 必须实际发生在房主；断线、撤销或配置错误时，不能回落到访客本机。
+- 本地与房主工具必须可区分。现有工具优先复用，但不以“零工具开发”为已经实现的结论。
+- 保持与 better-sidebar 等插件兼容，不替换主界面或整列侧栏。
 
 ### 0.2 决策表
 
-| # | 决策 | 理由 |
+| # | 决策 | 状态与边界 |
 |---|---|---|
-| D1 | 房主只提供能力：文件、终端、审计。无 agent、无会话、无 Web UI | 公开 Web 端不可行；agent 属于访客 |
-| D2 | agent 跑在访客的 DSH 里 | 访客的模型、访客的 API key、访客的上下文 |
-| D3 | 入口是右栏 tab，不是主页面 | 不抢占 `main`；不开会话时不出现可接受 |
-| D4 | 复用 DSH 的权限**词汇**（三个模式名）与**执行机构**（`fs-sandbox`） | 见 §4；审批除外，那个要 agent，见 §4.5 |
-| D5 | 房主不监听任何入站端口，只开出站 WSS | NAT / 无公网 IP / 无管理员权限 |
-| D6 | 中继默认 Cloudflare Workers + DO，一房间一；**relay 地址可配置** | 零运维；DO 天然是房间的消息总线；换中继不改协议，见 §3.4 |
-| D7 | 传输 = 一条 WSS + 自写多路复用 + 命名协议 | ShellHub 的结构，见 §2.2 |
-| D8 | 加密端到端，中继只转发密文 | 房主不该因为用了别人的中继就信任它 |
-| D9 | 房间是一个 **agent preset**：在隔离 realm 里换掉 `ctx.fs` / `ctx.subprocess`，`tool-fs` / `tool-bash` 原样复用，**零工具开发** | 见 §5.1；模型继续用 `read`/`write`/`bash`，不学新工具 |
-| D10 | 房主的终端用 `ctx.subprocess.spawnTerminal` 开在房主机器上 | `ctx.terminals` 要 Agent，房主没有 Agent |
-| D11 | 审计 = 会话对象 + `before`/`after` 快照，可回放 | 借 ShellHub recording 的形态 |
-| D12 | `workspace-write` 档**不含**命令执行 | 不是安全策略取舍，是这一档物理上做不到，见 §4.4 |
+| D1 | 房主仅提供能力；agent 在访客 | 固定约束；房主控制面不依赖 session |
+| D2 | 两端出站 WSS，经可配置中继配对 | 主线；Cloudflare Worker + DO 是候选默认，须测目标网络 |
+| D3 | 复用 DSH 三种模式名与 fs 原子操作、写围栏 | 房主另行实施房间读写边界，不能直接继承部署权限 |
+| D4 | 入房一次授权，授权绑定连接、对端与代际 | 重连不自动继承旧授权；无逐动作确认 |
+| D5 | 优先在 preset 隔离 realm 中替换 provider | 待完整组合 PoC；不是整个 session 的所有服务都会随之替换 |
+| D6 | 单 npm 包，Host/Client 两个运行面，多个必要导出入口 | provider 子路径必须真实构建并列入 exports |
+| D7 | 中继不获得内容密钥；使用认证的端到端加密 | 具体握手实现尚待选定，未通过验证前不开放真实数据 |
+| D8 | WSS 上做轻量逻辑分流与有界 RPC/流控 | 不预设通用 mux；不承诺固定行数或无窗口 |
+| D9 | 首个交付纵切只含受限文件能力 | 搜索、普通进程、PTY、跨 OS 分阶段验证 |
+| D10 | 普通命令用房主 `subprocess.spawn`，PTY 用房主 `spawnTerminal` | 后续独立阶段，二者不能相互替代 |
+| D11 | 房主保存有界操作 journal，写 diff 取自 fs 成功结果 | 不宣称完整录像、回滚或每次写均有原文 |
+| D12 | 受限档不提供任意命令执行 | 当前 DSH 默认沙箱不保证只读共享目录；不是理论上无法实现受限 runner |
 
-### 0.3 v4 → v5 改了什么
+### 0.3 v5 的关键修正
 
-| 项 | v4 | v5 |
+| 原假设 | v6 |
+|---|---|
+| 房主不开任何 Web UI，授权却放 session 右栏 | 房主用无 session 的本地控制入口；访客右栏只负责远程工作区 |
+| 只补读检查，写原样交给 fs-sandbox | 房主对全部读写入口授权，策略由本地 grant 生成；fs-sandbox 附加兜底 |
+| 换 fs/subprocess 后全部工具免费远端化 | 逐项检查消费者、搜索、shell、路径与后台任务依赖 |
+| 13 个抽象成员等于 13 个 RPC | 三个同步成员本地实现，流另有生命周期 |
+| pause + bufferedAmount 足以端到端背压 | 接收端反馈、有界队列、数据调度与源暂停共同工作 |
+| 几个密码算法足以定义 E2EE | 认证握手、记录绑定、nonce、防重放与重连密钥均须验证 |
+| 按层铺开 45 个文件 | 先做纵切；保留授权、密码、传输、Host/Client、relay 的边界 |
+
+## 1. 技术栈与包形态
+
+### 1.1 已选与待选
+
+| 项 | 选择 | 要求 |
 |---|---|---|
-| 档位 | 自造 `watch` / `edit` / `takeover` | **直接用 DSH 的 `read-only` / `workspace-write` / `danger-full-access`** |
-| 权限判定 | 自写 `guard()` 四分支 | 委托给房主的 `ctx.fs`（`fs-sandbox`）+ 一条自写读边界 |
-| 入房授权 | 自写对话框 | 抄 DSH 的 `allowed-once` 语义；实现只能自写，见 §4.5 |
-| 工具接入 | 首选换 provider，回退 `room_*` | **房间 = preset，换 provider，零工具**（回到 v4 §8.1；v5 初稿误降级为 `room_*`，已推翻） |
-| 文档 | 909 行 / 17 节 | 本文件；把「为什么」压实成表，删掉重复论证 |
-| 技术栈 | 散落各处 | 独立成 §1 |
+| 语言 | TypeScript、ESM、strict | Host/Client 的运行时导入不得混用 |
+| 构建 | tsdown + tsc 类型检查 | Client 必须产出 DSH 动态模块格式，不能只用普通浏览器 ESM 代替 |
+| 测试 | Vitest + 真实 Loader/分发产物 smoke | 单测之外覆盖真实组合、卸载和会话隔离 |
+| WSS 客户端 | Node 全局 WebSocket | Node 22.4 起稳定；插件最低 Node 版本还须服从目标 DSH 的实际要求 |
+| Config | `@deepseek-ai/schemastery` | 版本对齐目标 DSH；wire 输入另做严格校验及长度/数量上限 |
+| 文件执行 | 房主 `ctx.fs`，要求经验证的 sandbox 写 provider | 不可在缺失写围栏时静默改用无约束实现 |
+| 进程与 PTY | 房主 `ctx.subprocess` | 不自行安装 node-pty；不使用要求 Agent 的 `ctx.terminals.spawn` |
+| E2EE | 优先评估维护中的认证密钥交换实现；Noise PSK 可作参照 | 具体库、版本、许可证、维护与安全证据在 A1 决策；不先承诺“零依赖” |
+| 中继 | Worker + SQLite-backed DO | 独立部署单元；地址可配置，部署前核对当期限制与配额 |
+| UI | DSH 动态 Client、Slots、主题 token、locale | HostControl 无 session 可达；访客右栏独立 key |
 
----
+不为依赖数量优化安全关键实现。不预装 ssh2、node-pty 或编辑器；如选自建 Node 中继，其 WebSocket 服务端依赖独立评估，Node 全局 WebSocket 不是服务端。
 
-## 1. 技术栈
+### 1.2 包导出与构建
 
-### 1.1 语言与构建
-
-| 项 | 选择 | 说明 |
-|---|---|---|
-| 语言 | **TypeScript**，ESM only，`"type": "module"` | DSH 全家桶都是 ESM；CJS 混入会撞 Loader |
-| 打包 | **`tsdown`** | `dsh-context`、`dsh-better-sidebar` 都用它，产物是单文件 `lib/index.js` |
-| 包形态 | **单包双入口** | `main: lib/index.js`（host）+ `./client`（web），照 `dsh-context` |
-| 类型检查 | `tsc --noEmit`，`strict: true` | 不产出 `.d.ts` 也能跑，但建议保留 `types` 供别人引用 |
-| 测试 | `vitest` | 同生态；传输层与 mux 必须有单测 |
-| Node | ≥ 22.19（开发机实测 24.21） | 依赖全局 `WebSocket` |
-
-包清单必须包含 DSH 认的 `dsh` 字段：
+以下仅表示计划的入口映射，不是可直接安装的完整 manifest。暂以 `@local/dsh-remote-room` 为本地开发包名；发布名称另定，引用时必须整体一致。
 
 ```json
 {
+  "name": "@local/dsh-remote-room",
   "type": "module",
   "main": "lib/index.js",
-  "exports": { ".": "./lib/index.js", "./client": "./lib/client.js" },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./provider-fs": "./lib/provider-fs.js",
+    "./deny-subprocess": "./lib/deny-subprocess.js"
+  },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
-    "client": {
-      "platform": "web",
-      "inject": ["@deepseek-ai/dsh-client-locale",
-                 "@deepseek-ai/dsh-client-ui-slots",
-                 "@deepseek-ai/dsh-client-ui-sidebar-right",
-                 "@deepseek-ai/dsh-client-ui-primitives"]
-    }
+    "client": { "platform": "web" }
   }
 }
 ```
 
-`inject` 里的包由宿主在运行时提供，**不要打进 bundle**——它们是 peer。
+- preset 引用 `@local/dsh-remote-room/provider-fs`，不是另一个包 `@dsh-remote-room/provider-fs`。执行阶段再增加 subprocess provider 导出。
+- `tsdown` 为这些入口生成对应产物；入口之间是否共享内部 chunk 由实际 Loader 与分发验证决定，不强求单文件。
+- Host 共享身份的 DSH 服务与 Cordis 不打包成私有副本；peer/dev 声明依据实际 import 与宿主接口确定。
+- Client 的 `dsh.client.inject`、模块 external 与 Cordis service inject 是不同机制，不能互相替代；由 A0 验证后补齐 manifest。
+- 使用实际目标 DSH 的精确兼容版本，不用浮动 `next` 声称与桌面版对齐。声明支持的 DSH/Node 版本范围并保留已测矩阵。
+- `files` 必须覆盖导出产物、patch、locale、图标及必要资源，排除 relay 与参考克隆。A0 从打包后的安装视图加载每个入口。
 
-### 1.2 外部依赖
+### 1.3 参照物与不照搬的部分
 
-**运行时依赖：1 个。**
-
-| 需要什么 | 用什么 | 依赖成本 |
+| 参考 | 复用或参照 | 不可推导的结论 |
 |---|---|---|
-| WebSocket 客户端 | **Node 24 全局 `WebSocket`**（undici） | 0 |
-| 端到端加密 | `node:crypto`：X25519 + HKDF + AES-256-GCM | 0 |
-| 多路复用 | **自写**，约 60–80 行，帧头 8 字节，无窗口 | 0 |
-| PTY | 房主 `ctx.subprocess.spawnTerminal` | 0（不用 node-pty） |
-| 文件读写 | 房主 `ctx.fs`（`fs-local` + `fs-sandbox`） | 0 |
-| **fs / bash 工具** | **复用 `tool-fs` / `tool-bash`**，在房间 preset 里挂载 | 0（见 §5） |
-| 协议/Config 校验 | **`@deepseek-ai/schemastery`** `~3.18` | 1 个 |
-| 中继 | Cloudflare Worker + DO | 0（`wrangler` 只在部署期用） |
+| DSH `fs-ssh` | 远端身份、同步路径方法、流关闭、错误映射 | 不能把全部成员做异步 RPC，不能照搬 POSIX 路径算法到 Windows |
+| DSH `subprocess-ssh` | 普通进程/终端句柄、取消、退出与回收 | 不是只实现 PTY 就支持 bash |
+| DSH `fs-sandbox` / `sandbox-policy` | 模式词汇、per-call policy、拒绝码 | 不自动获得 room grant，也不只允许写 room root |
+| DSH `tool-fs` / observation policy | 现有工具与观察/过期保护 | stale 保护依赖组合中的独立 policy，不是工具自动附送 |
+| DSH preset registry | 同 realm 的 provider/consumer 组合 | preset 不是安全沙箱，也不是每个 Agent 一套 provider |
+| open-remote-ssh | 生命周期、认证失败停止重连、普通 exec 与 PTY 分离 | 不照搬远端 Server 引导、OpenSSH 配置和端口转发 |
+| ShellHub | 设备出站、逻辑通道和协议身份 | 多个逻辑流不消除同一底层连接上的队头阻塞；不能删掉流控义务 |
+| better-sidebar | 插件共存与槽位使用方式 | 不依赖其内部 DOM、私有组件或固定 tab 数量 |
 
-选 `schemastery` 而不是 `zod`：Cordis 的 `Config` 本来就是 schemastery，再引一套 zod 等于两套校验器并存。
+SSH 本身不强制 helper 二进制；DSH 当前 SSH 家族依赖 OpenSSH 连接与远端 helper，这是它的实现选择。我们不直接挂该家族，是因为房主已有 DSH 能力、部署约束要求零新增入站端口，而非 WSS 天生比 SSH 安全或实现更少。
 
-**peerDependencies（宿主提供，不打包）**：`@deepseek-ai/cordis`、`dsh-fs`、`dsh-subprocess`、`dsh-sandbox-policy`、`dsh-user-approval`、`dsh-tools`、`dsh-session`，以及 4 个 `dsh-client-ui-*`、`react@18`、`react-dom@18`。
+## 2. 架构与职责
 
-**devDependencies**：`typescript`、`tsdown`、`vitest`、`@types/node`、`@types/react`、`@types/react-dom`，以及上面那些 `@deepseek-ai/dsh-*`（装 npm `next` tag，与桌面版 `0.2.1-rc.x` 对齐）。
+### 2.1 拓扑
 
-**不引入**：`ws`（有全局 WebSocket）、`ssh2`（见 §2.3）、`node-pty`（房主已有 PTY 服务）、`zod`（见上）、CodeMirror（v1 用只读渲染，编辑器延后）。
+```text
+房主本机 UI → 本地 controller → RoomService → 授权/路径检查 → ctx.fs / ctx.subprocess
+                                   │
+                              出站 WSS
+                                   │
+                         Worker → 房间 Durable Object
+                                   │                 只转发受限长度的密文数据
+                              出站 WSS
+                                   │
+访客本机 UI → 本地 controller → RoomService ← 远端 providers ← 经验证的 preset 工具
+```
 
-### 1.3 参考实现对照表
+插件服务在两端已运行的 DSH 进程内工作，不额外部署房主 daemon/helper。仍需安装插件、运行 DSH，并有可用中继，不能称为“什么都不用装”或“零部署”。
 
-写代码时对着这些抄形状，不要自己发明：
+### 2.2 唯一状态与资源所有者
 
-| 要写的东西 | 参考 | 抄什么 |
+- `RoomService` 拥有房间、连接代际、grant、Guest 绑定、RPC 与进程/流资源；UI 只展示状态和调用操作。
+- 授权由房主本地状态决定。中继的 role/配对信息和访客发送的 mode/root/target 都不是授权依据。
+- Host controller 是本机 UI 的受控入口；Guest 发来的 wire 方法使用单独白名单，不能调用本地 approve、提权或任意 DSH Remote API。
+- preset revision 是共享实例。绑定必须显式包含会话、房间与代际，不使用全局 `currentRoom`；旧会话不能被重定向到后来加入的新房间。
+- UI tab 隐藏、组件卸载与关闭终端是不同动作；不能用 React 生命周期决定授权是否有效。
+
+### 2.3 本地 UI → Host 桥
+
+在 A0 选择并验证目标 DSH 支持的、无 Agent 的 Client-callable Host 接口。现有 slash/session command 要求 Agent，不能充当房主无 session 入口；Host Service 也不会自动变成 `ctx.remote` 方法。
+
+桥必须完成方法注册、Client 挂载、wire codecs、结果/错误、订阅基线、取消及 UI 重连恢复。参考 `packages/api/gateway`、`packages/api/remotes`，以当前运行时接口为准，不在本文猜方法签名。若公开接口不能满足无 session 调用，应先解决插件扩展点，而不是暴露房主 Web 给访客。
+
+本地 create/join/observe/revoke 等操作共用 RoomService。approve 和扩大权限只允许本地用户操作，不能提供给 agent 自批；其余可供 agent 使用的管理动作在实现阶段另评估，不改变“优先复用文件工具”的目标。
+
+## 3. 授权、路径与执行边界
+
+### 3.1 模式语义
+
+| 档位 | 文件能力 | 执行 |
 |---|---|---|
-| 远端 fs provider | `packages/ssh/fs-ssh` | 路径是**远端坐标**不是本地句柄；`processPathFromHostPath()` 返回 `undefined`；单次读 8 MiB 上限；不实现 `watch()` |
-| 远端子进程 / 终端 | `packages/ssh/subprocess-ssh` | 终端句柄的生命周期、控制流、取消 |
-| 权限 | `packages/fs/fs-sandbox`、`packages/sandbox/sandbox-policy` | 模式词汇、`SandboxExecutionPolicy` 字段、拒绝码 |
-| 一次性授权 | `packages/interaction/user-approval` | `allowed-once` 语义；它的 `request()` 要 Agent + turn，房主没有，见 §4.5 |
-| fs 工具 | `packages/fs/tool-fs`、`tool-fs-search`、`tool-str-replace-editor` | **不抄，直接复用**：挂在房间 preset 里，只换它脚下的 `ctx.fs` |
-| preset 隔离机制 | `packages/preset/agent-preset-registry`（README + `src/mount.ts`） | 一个 preset = 一棵隔离 Loader 树；provider 与 consumer 必须在同一 group |
-| 插件骨架 | `dsh-context`（第三方单包双入口） | `tsdown` 配置、`dsh` 字段、`exports` |
-| 右栏 tab | `dsh-better-sidebar` | tab 注册方式；并把它当兼容对象，见 §7 |
-| 连接 / 重连 / 隧道 | `open-remote-ssh` | 见 §2.1 |
-| 反向隧道 + 协议名 | ShellHub | 见 §2.2 |
+| `read-only` | 仅共享根内的读取与必要元数据 | 禁止普通 spawn 与 PTY |
+| `workspace-write`（默认） | 仅共享根内的读取、创建/覆盖文本、文本修改 | 禁止普通 spawn 与 PTY |
+| `danger-full-access` | 房主当前 OS 用户可访问范围内的整机文件 | 后续执行阶段开放普通命令与 PTY，仍受 grant/生命周期限制 |
 
----
+复用模式名，不宣称与 DSH 原模式完全等价。DSH 默认沙箱允许更广的读取，参考实现的 workspace-write 还允许临时目录；插件受限档都不因此扩展房间范围。UI 必须标明这一差异。danger 不意味着提权到管理员或绕过 OS ACL。
 
-## 2. 参照物：各抄什么
+当前 fs seam 没有 remove/rename/mkdir 方法；首版不自行补齐这些远程管理操作。创建文本仍可能产生父目录等副作用，必须验证整个操作的路径影响，不能把“无删除方法”宣传成“不会造成数据损失”。
 
-### 2.1 open-remote-ssh（最贴近我们的 TypeScript 实现）
+### 3.2 一次授权与可信 policy
 
-`jeanp413/open-remote-ssh` 是 VS Code Remote-SSH 的开源平替，纯 TS，`webpack` 打包。读过源码后，值得抄和不值得抄都很清楚：
+房主确认已认证访客后，记录不可由 Guest 修改的 grant：房间 ID、认证对端/连接代际、模式、规范化共享根、允许的方法、有效期和撤销状态。配置明确邀请/握手/授权过期时间，不存在隐式永久授权。
 
-**值得抄的：**
+每次能力调用都由房主执行：
 
-- **隧道就是一个本地 TCP 监听器**：`net.createServer()` 监听 `127.0.0.1:0`，每条 socket 调 `forwardOut()` 拿一条 SSH 通道，然后双向 `pipe`。VS Code 只认「本地端口」，插件就给它一个端口。
-  → 我们不需要 TCP 端口（fs/pty 走自己的 RPC），但**同样的手法可以用在 `sock:` 直连上**：sshs 家族要的是 duplex stream，我们的 mux 流可以直接喂进去，不用中转端口。
-- **重连策略**：`close` 事件里判断 `retries <= tries && err.level !== 'client-authentication' && err.code !== 'ENOTFOUND'` 才退避重连。**认证失败不重连**——这条我们也要有：房间被撤销后不能死循环。
-- **`execChannel()` 不分配 PTY**，所以写进去不会有本地回显。我们的 `pty` 流（要 PTY）与一次性命令（不要 PTY）照这个划分。
-
-**不值得抄的（也是我们不做 SSH 的原因）：**
-
-- `authResolver.ts` **46 KB**，占整个插件源码的三分之一。它要处理 `~/.ssh/config`、密钥口令、keyboard-interactive、known_hosts 校验、跳板机。我们一个邀请链接 + ECDH 全部绕开。
-- `serverSetup.ts` + `fetchRelease.ts` **约 23 KB**，负责在远端下载安装 VS Code Server、校验 commit、匹配版本、失败重装。**我们没有这一步**——房主的 DSH 本来就在跑。
-- 它仍然**必须有远端 sshd**：配置文件里写着 `AllowStreamLocalForwarding`，说明它依赖服务端的端口转发能力。它只替换了客户端，从不替换服务端。
-
-### 2.2 ShellHub（反向隧道与协议名）
-
-`shellhub-io/shellhub`，Go，Apache-2.0。抄三个概念，不抄代码：
-
-- **设备不监听端口**：设备端跑一个 gliderlabs/ssh 实例但**从不 `Listen`**，拿到隧道连接后直接 `sshd.HandleConn(conn)`。这就是「零入站」的标准做法。
-- **按流协商协议名**：`/ssh/open/1.0.0`、`/ssh/close/1.0.0`、`/http/proxy/1.0.0`，注释明确写着「改一个字符就是线上不兼容变更」。**协议名自带版本**，比在 payload 里加 `version` 字段更硬。
-- **一个流一个用途**：SSH、HTTP 代理、SFTP 各占一条流，互不阻塞。这就是我们「大终端流量下 fs 请求仍要即时响应」的依据。
-
-底层它用的是 `hashicorp/yamux v0.1.2` + `go-multistream v0.6.1`。我们不复用 yamux（Go），**也刻意不抄它的窗口流控**——窗口是在「只能靠协议自己管背压」时才需要的，而我们的终端源是 `Readable`，`pause()` 更直接，见 §3.5。
-
-### 2.3 为什么不用 ssh2
-
-| 方案 | 卡在哪 |
-|---|---|
-| `ssh2`（Node） | 需要**服务端**。房主没有可达的 sshd，也没有管理员权限开端口。要自建 sshd 就得自己实现服务端 + 认证 + 通道，比自写 mux 更大 |
-| 自建 sshd 跑在隧道里 | = 自己写 SSH 服务端。认证、算法协商、通道、PTY 请求全部重来 |
-| Teleport / Coder | 一整套集群（CA + proxy + auth），许可证也挡着 |
-| ShellHub 代码 | Go，且是 Kubectl 式的设备管理产品，我们要的是房间 |
-
-**结论**：SSH 是「两台机器互信之后的通用底座」，我们不缺通用底座——我们缺的是一条能穿过 NAT、能带版本号、能审计的**能力通道**。mux 60 行就够。
-
-什么时候再上 ssh2：当有人想让标准 `ssh` 客户端直连房间时。届时把 mux 的一条流喂给 ssh2 的 `sock:` 即可，fs 协议不动。
-
----
-
-## 3. 架构
-
-### 3.1 拓扑
-
-```
-房主 DSH ──插件──┐
-                 │ 出站 WSS（唯一方向）
-                 ▼
-        Cloudflare Worker ──► Durable Object「房间」
-                 ▲                     │
-                 │ 出站 WSS            │ 只转发密文帧
-                 └─────────────────────┘
-                 ▲
-访客 DSH ──插件──┘  右栏 tab + 房间 preset + agent
+```text
+校验连接、代际、grant、方法与输入上限
+  → 从可信 grant 派生实际能力，不信访客提供的权限字段
+  → 房主规范化并检查目标（读写均检查）
+  → 将检查后的目标与房主生成的 per-call policy 交给能力
+  → 记录完成、拒绝或未知结果
 ```
 
-一条 WSS 里跑多路复用，每一路是一个**命名协议**：
+`fs-sandbox` 优先采用显式 policy；不传则使用部署 fallback，不会自动知道房间。Host 必须显式传入当前受支持的 `mode/workspaceRoot`，不得透传访客提权参数。源码含 `additionalWritableRoots`，当前 Inspect 返回类型却未包含；首版不使用额外根，并在 A0 固定目标版本复核。
 
-```
-/dsh/ctl/1.0.0    握手、授权、心跳、撤销
-/dsh/fs/1.0.0     结构化文件 RPC（JSON）
-/dsh/pty/1.0.0    终端字节流
-/dsh/audit/1.0.0  房主 → 访客的单向审计流
-```
+复用原子写、版本守卫与 fs-sandbox 拒绝机制，但房间根检查是独立的授权条件。缺少所需写 provider 或无法确认其语义时，不开放写入。
 
-命名协议的价值：访客和房主版本不一致时，能同时提供 `1.0.0` 和 `1.1.0`，按名字选交集，而不是靠 payload 里的版本字段猜。
+### 3.3 所有文件入口均受约束
 
-### 3.2 房主侧零部署（相对 SSH 家族的关键便宜）
+- 检查覆盖 resolve、stat/lstat、readText、streamText、readBytes、readByteRange、listDir、writeText、editText，不能只围其中三个方法。
+- Guest 路径按房主方言解析；Guest 传回的 targetKey 不代表已授权文件句柄。Host 校验来源并重新解析实际使用的目标。
+- 检查与执行使用同一个 fresh target；`contains()` 只是解析后目标之间的词法包含判断，不是独立的符号链接安全原语。
+- listDir 还需检查/脱敏子项，避免房间内链接泄露外部真实路径与元数据；lstat 的“不跟随最终链接”语义须单独测试。
+- 根目录替换、符号链接/junction、缺失路径最近祖先、Windows 大小写/盘符/UNC、伪造和过期 target 都进入测试。
+- DSH fs-sandbox 接受最后一次解析到 syscall 之间的残余 TOCTOU。A2 必须定义本插件的威胁模型并验证并发链接置换；若不能满足远程不可信输入的范围保证，应收紧支持范围或采用更强路径访问机制，不能直接标注“风险已消除”。
 
-DSH 已经有完整的远端能力家族 `packages/ssh/`：`ssh`（连接）、`fs-ssh`（`ctx.fs`）、`subprocess-ssh`（`ctx.subprocess`）、`sandbox-ssh`（`ctx.sandbox`）、`ssh-helper-runtime`（**给没装 Node 的远端机器用的预编译 helper**）。
+上述检查发生在房主进程内，不是每一次检查都需要额外网络往返。根缓存如采用，必须规定失效语义，不能以性能为由无限缓存授权身份。
 
-它的做法是：远端机器上跑 helper 二进制，helper 内部就是 `fs-local` + `fs-sandbox`。
+### 3.4 为什么受限档禁任意执行
 
-**我们的远端不需要 helper。** 房主的 DSH 就是那台「远端」——`fs-local`、`fs-sandbox`、`spawnTerminal` 全都已经在他进程里跑着了。所以：
+当前 DSH 默认沙箱词汇主要约束文件写入，不保证只读共享根，也不全面限制网络与进程可见性。任意 shell 可以读共享根外的文件、环境和凭据，并可能外传，因此不满足本插件受限档承诺。
 
-| | SSH 家族 | 我们 |
+这是当前实现与范围的选择，不是“受限执行物理上不可能”。未来若要支持，需单独设计和验证 runner；不能通过放开 subprocess 来免费获得 grep/glob。
+
+### 3.5 本地确认与审计
+
+房主控制入口须无 session 可用，包含开房、选择根/模式、确认访客、有效期、在线状态、撤销与关房。`ctx.userApproval.request()` 要 Agent 和打开的 turn，不用于本阶段房主授权；不为复用它创建虚假 Agent 会话。
+
+拒绝、超时、认证失败、版本不兼容均不授予能力。不得把关闭提示或 UI 失联解释为同意。基本 grant/revoke/拒绝记录与操作日志在开放写入之前完成。
+
+## 4. 工具复用与 provider 验证
+
+### 4.1 复用优先，不承诺零开发
+
+| 能力 | 已确认机制 | 实施要求 |
 |---|---|---|
-| 远端要装什么 | helper 二进制（多平台分发） | **什么都不用装**，DSH 已在跑 |
-| 远端 node | 不需要（helper 预编译） | 有（就是 DSH 本身） |
-| 认证 | 密钥 / 口令 / known_hosts | 邀请链接里的房间密钥 |
-| 入站 | 要 sshd | 零入站 |
-| 版本匹配 | helper 与客户端要匹配 | 协议名带版本 |
+| read/write/edit | 文件工具使用 fs seam | 同 OS 先跑闭环，验证 observation policy、diff 与拒绝呈现 |
+| processPath/fileUrl/contains | FileSystem 的同步方法 | Guest 同步实现；resolve/握手返回足够的房主坐标、URI 与路径方言信息 |
+| streamText | 异步流不是一个 JSON 字段 | 建立有界 pull/next/close/cancel 生命周期，参考 fs-ssh |
+| glob/grep | 通过 subprocess 运行 rg，不经过 fs | 首个受限纵切不挂载；后续评估受约束搜索 API 或上游 capability 改进 |
+| 搜索二进制 | 现有工具解析访客本地 rg 绝对路径 | 不能原样交房主 spawn，需房主定位与验证的适配 |
+| bash/pwsh | shell executor 依赖普通 subprocess | 需要完整 spawn handle/collect/取消/退出支持；按房主环境选 shell |
+| 后台任务/spill | 还有 jobs、存储、路径消费者 | 逐项验证，不透传不可读的本机路径冒充远端结果 |
+| 文件树/预览 | 内置树未证明跟随隔离 fs | 插件自己的 UI 显式绑定房间，不假定换 provider 自动替换所有 UI |
 
-代价：房主必须装我们这个插件，且 DSH 必须在运行。这跟 Remote-SSH 要求 sshd 常驻是同一类约束。
+`processPath/fileUrl/contains` 不能改成返回 Promise 的 RPC。Guest 的同步 contains 只服务调用方接口，房主仍独立授权。二进制传输显式编码；`processPathFromHostPath` 不把访客本机路径映射到房主；首版 watch 明确不支持，以刷新替代。
 
-### 3.3 「两边都起服务」的问法
+### 4.2 preset 接线要求
 
-不需要额外进程。两个「服务」就是两个**已经在跑的 DSH 进程里的插件**：
+A0 产出真实可加载的 patch，而不是把未验证伪 YAML 当配置。Loader group 使用 `group: true`、行级 `isolate` 映射和 `config` 子条目数组；provider 与所有相关 consumer 必须同 realm。
 
-- 房主侧：注册一个房间服务，出站连中继，收到请求就调本机 `ctx.fs` / `ctx.subprocess`。
-- 访客侧：注册右栏 tab + 一个房间 preset（在隔离 realm 里换掉 `ctx.fs` / `ctx.subprocess`），出站连中继。
+- 提供 fs、subprocess、shell、workingDirectory、sandboxPolicy 等服务时，按实际提供项一并隔离；不隔离 sandboxPolicy 却在组内新建它会触发服务泄漏审计。
+- `dsh-shell` 是抽象服务定义，不能当具体 provider；执行阶段使用经验证的 bash/pwsh provider。
+- 受限阶段显式拒绝 subprocess/执行路径；可用 deny provider 满足隔离测试，不借用访客本地实现。禁用搜索、bash、PTY 及其他未验证执行入口。
+- `agent.ctx` 普通查找仍可能取 Host realm；同名工具是 scope shadow，未覆盖的 Host 工具仍可能可见。列出模型可见工具及其执行世界，审计文件、进程、subagent、存储等旁路。
+- 验证 observation policy、working directory、shellEnv、jobs 与工具注册范围。房主环境由房主重建/过滤，不能把访客 DSH_HOME/PROFILE_DIR 等本地坐标直接注入远端进程。
+- preset 只能在当前 API 允许的空白会话阶段选择；不能承诺在已开始的会话里随意切换 provider。
 
-### 3.4 不走 SSH，那走什么
+### 4.3 本地/远端可区分与跨 OS 门槛
 
-一句话：**一条出站 WSS + 自写多路复用 + 命名协议 + 端到端加密**。
+同名工具替换与“同会话可明确访问两个目标”不是一回事。A0 必须先确定寻址方案：可明确标识的专用远程会话，或同一会话中的显式本地/远端调用目标。若采用分会话作为首版限制，须获得产品确认；不能悄悄把原需求改成只可二选一。
 
-SSH 替我们做的事就五件，逐条对上：
+无论采用何种方式，模型上下文、调用/结果与 UI 都要能识别执行世界、房间与根，且可从已提交会话记录重建模型看到的绑定事实；密钥与邀请秘密不得进入记录。实现模型侧呈现时再核查工具/提示扩展接口，不在本文捏造事件类型。
 
-| SSH 的职责 | 我们的替代 | 说明 |
+跨 OS 不能仅靠“不透明字符串”解决：现有 editor、workingDirectory、sandboxPolicy、shell 等消费者使用访客本地路径或平台判断。先验证同 OS；Windows→POSIX 与 POSIX→Windows 分别测试，在消费者适配完成前不宣称支持。
+
+## 5. 传输、认证与协议
+
+### 5.1 认证加密通道
+
+邀请链接包含随机房间标识与高熵秘密，秘密置于 fragment；插件本地解析，不发送给 relay，不记入日志/遥测。fragment 只降低 HTTP 泄漏，不防剪贴板、聊天转发或历史记录泄漏；邀请应可过期、关闭和更新。
+
+X25519、HKDF、AES-GCM 是候选原语，不是完整协议。A1 选定实现前必须覆盖：秘密对握手 transcript 的认证，角色/房间/协议绑定，双向独立密钥，密钥确认，唯一 nonce，严格序号/防重放，必要帧头的完整性保护，以及每次重连的新密钥与连接代际。
+
+优先选有维护、测试向量和可核查安全依据的实现；Noise PSK 仅是候选参照。记录实际库、精确版本、许可证与使用模式；自有代码以适配为主。原方案 `HMAC(k, nonce)` 不再作为已完成握手，序号出现在 AAD 也不等于已实现防重放。
+
+中继仍能观察房间路由、IP、流量大小与时序，并能拒绝服务；E2EE 不消除这些元数据或可用性风险。未经认证与授权不能执行真实能力。
+
+### 5.2 逻辑消息与方法
+
+v1 固定一种协议版本，不兼容直接拒绝；命名可借鉴 `/dsh/ctl/1.0.0`、`/dsh/fs/1.0.0`，不预建版本交集协商框架。封包头与编码在 A1 通过测试冻结，不再预定“8 字节、自写 60 行即可”。
+
+| 消息族 | 内容 | 边界 |
 |---|---|---|
-| 加密传输 | X25519 ECDH → HKDF-SHA256 → AES-256-GCM，AAD = `roomId \| direction \| seq` | 中继只转发密文 |
-| 身份认证 | 邀请链接里的 `roomKey`（URL fragment）+ 房主手动确认 | 没有密钥/口令/known_hosts，一次性、可撤销 |
-| 多路复用 | 自写 mux：8 字节帧头，无窗口（背压走 `pause()`） | 约 60–80 行，不引 SSH 通道栈 |
-| 通道协商 | 命名协议 `/dsh/{ctl,fs,pty,audit}/1.0.0` | 名字带版本，比 payload 里的版本字段硬 |
-| PTY | 房主 `ctx.subprocess.spawnTerminal`，字节流走 `/dsh/pty` | 终端是房主 OS 的事，协议层不实现 |
-| 端口转发 | **不需要** | 我们不隧道 TCP，直接发结构化 RPC |
+| ctl | 能力/平台信息、认证状态、grant、撤销、心跳 | relay 配对不等于认证，认证不等于授权 |
+| fs RPC | resolve、stat/lstat、文本/字节读、目录、write/edit | 三个同步 provider 成员不在 RPC 方法表内 |
+| stream | open/next 或 credit/data/end/cancel | 句柄绑定连接与 grant 代际，关闭释放资源 |
+| audit | 有界分页查询、必要通知 | 先不独立分配审计数据流 |
+| process/pty | 后续普通进程与终端控制/数据 | 两类生命周期独立，未实现时不协商为可用 |
 
-关键差别不是「更轻」，是**数据面形态不同**。SSH 传的是终端字节流 + SFTP 文件块，我们传的是 `{ method, path, args }`：
+每个请求包含唯一 request ID，回复对应请求；明确超时、取消、错误码、结果上限和晚到回复处置。对已结算 ID 不重复执行；去重表有界，淘汰或跨代际后不把未知 mutation 作为新请求补跑。不宣称全链路 exactly-once。
 
-- 权限判定需要**结构化路径**——房主要对 `path` 跑 `contains()`，字节流里做不到；
-- 审计需要 `before` / `after` 快照——SFTP 的 write 只有字节，没有原文；
-- 版本演进需要对**方法**协商，而不是对通道协商。
+文本流跨分片解码必须使用增量解码或保留完整码点；不得逐个任意字节块独立解码。PTY `write(data: string)` 维持文本语义，通用字节分片不必为此全部变成文本协议。
 
-握手全流程：
+### 5.3 流控与资源上限
 
-```
-访客                          中继(DO)                         房主
- │  WSS(roomId)  ───────────►  │  ◄───────────  WSS(roomId)
- │  ctl:hello {v, nick}        │                 ctl:hello {v, nick}
- │                             │  配对（房主在线才放行）
- │  ctl:auth {HMAC(k, nonce)}  │  ← 中继看不到明文
- │  ◄──────────────────────────────  ctl:grant {tier, root}
- │  OPEN /dsh/fs/1.0.0 …
-```
+`bufferedAmount` 只观察本地发送积压，`Readable.pause()` 只暂停本地源，二者不能说明“中继→访客”是否消费完成。设计必须包括接收端消费反馈/credit、每流与每连接有界队列、在途请求数、数据分块调度和源暂停；fs 流优先采用拉取。
 
-**传输可替换。** mux 之上不知道自己在什么管道里跑，只要给一条双向字节流。所以中继三选一：
+控制/撤销消息优先于 bulk，但共享有序 WSS 仍有队头阻塞，不能承诺“互不阻塞”。加密后的完整消息也受上限约束；重组缓冲、解密前长度、JSON 深度/数组数量、日志和去重状态均要有界。
 
-| 中继 | 何时用 |
-|---|---|
-| Cloudflare DO（默认） | 零运维；一房间一 DO 天然是消息总线 |
-| 自建 ~60 行 Node WS 转发 | Cloudflare 在境内不稳时；同一接口，换 URL 即可 |
-| WebRTC DataChannel | 以后想 P2P 不经中继；mux 完全不动 |
+业务部署值放 Config，协议安全上限在协议中固定；A1 冻结具体默认值与绝对上限。readText 可先以 8 MiB 为候选业务上限，帧需分块，不把整个读取结果塞进一条控制消息。过大文件返回可操作错误/范围读取方式，不静默截断后当完整内容。
 
-因此 API 必须是 `connect({ relayUrl, roomId, roomKey })`——**relay 地址是配置，不是编译期常量**。
+Cloudflare 当前官方接收 WebSocket 消息上限为 32 MiB，不是旧方案的 1 MiB；本协议可以且应选更小的限制。部署时重新核对，不能把平台最大值当作本产品的内存预算。
 
-心跳 25s 一次 `PING`，两次不回判死。重连用指数退避 + 抖动，**认证失败不重连**（照 open-remote-ssh 的判据）。流不跨连接恢复：`pty` 断了就 `RST`，UI 显示「已断开」，不假装连续。
+### 5.4 中继部署
 
-### 3.5 WSS 够不够：四个维度
+- Worker 路由并升级连接，一个 DO 管理房间配对；两侧均为入站到 DO 的 WebSocket，可使用 Hibernation API。
+- 普通内存 Map 会在休眠后丢失。连接 attachment/重建过程保存必要角色与路由状态；不保存内容密钥和授权决定。
+- 独立 `package.json`、tsconfig、wrangler、SQLite migration/bindings、配置说明与部署测试。relay 不导入 DSH Host/Client 或权限/密钥实现。
+- 限制房间创建、配对槽位、未认证等待、消息大小/速率、连接数与 TTL；对乱序配对、角色抢占、断线和滥用做测试。中继侧防滥用不替代端到端认证。
+- Hibernation、心跳和配额一起测试，不能只凭 API 存在就声称零运维/零成本。中继不可用时不自动换至未获用户认可的地址。
 
-「SSH 更成熟」这个直觉是对的，但要看成熟度花在哪。**SSH 值得抄的是设计，不是实现**；而且我们真正需要的终端语义（PTY 分配、`resize`、前台进程组信号、活动观察、会话回收）已经在 DSH 的 `spawnTerminal` 里了，不需要复刻 SSH 的 `pty-req` + `channel` 那一套。SSH 另外 90% 的成熟度花在我们用不到的地方：agent forwarding、端口转发、X11、SCP、密钥与 known_hosts 管理。
+自建 relay 是后备部署选项，须实现相同配对与限制并独立验证，不称为“60 行生产中继”。WebRTC/SSH-over-stream 暂不实现；WebRTC 还需要 Node 支持、信令与可能的 TURN，不作为延迟不达标后的自动切换。
 
-| 维度 | 判断 | 依据 |
-|---|---|---|
-| 帧切分正确性 | **够** | TCP 之上有序可靠；单条消息 ≤ 1 MiB（Cloudflare 上限），DATA 帧 64 KiB |
-| 背压 / 流控 | **够，且比窗口简单** | `output` 是 `Readable`，`pause()` 就是真背压，不用手写 WINDOW 记账 |
-| 吞吐 | **够** | 终端典型几十 KB/s；fs 单次 8 MiB，分页即可 |
-| **延迟** | **这是真短板** | 多一跳中继。境内走 Cloudflare 时 RTT 可能 100–300ms，终端手感会明显变钝 |
+## 6. 生命周期与审计
 
-延迟这一条不能靠论证解决，只能靠**测量**。所以 M0 的验收加两条硬指标：
+### 6.1 断线、撤销与未知结果
 
-1. 经中继的 RTT（境外 DO 与自建 Node 转发各测一次）；
-2. 终端刷屏时 `read` 工具的 p95 延迟。
+房间状态至少区分等待连接、认证、待确认、已授权、撤销中和关闭；连接另有代际。RoomService 统一拥有状态转换与资源清理，不在多个 UI/handler 内各写一套。
 
-**任一项超标就上直连**，而不是继续优化中继：传输层抽象成 `{ send(frame), onFrame, close }`，先跑 WSS，之后加 WebRTC DataChannel（STUN 打洞、TURN 兜底），mux 与协议一行不改。
+撤销、到期、断线检测或插件卸载后，立即拒绝新能力调用，取消在途请求与文件流，执行已启用普通进程/PTY 的终止程序并等待可观察退出。不能保证撤销已提交的写入或任意命令的外部副作用；无法完成回收要明确显示错误，不能提前显示“已全部停止”。
 
-> 一个反直觉的结论：如果哪天房主自己有公网 IP 且愿意开 sshd，SSH 直连确实会更好（低延迟、成熟）。但那是个**可选加速路径**，不是底座——让普通用户为修个软件去配 sshd，本末倒置。
+突发网络中断在房主检测前有窗口，故连接需心跳与有效期；A1 明确失活判定预算。仅网络错误可退避重拨，认证失败、撤销、过期和版本不兼容停止自动尝试。新连接重新认证并由房主重新确认，不自动恢复旧 grant/流。
 
----
+读可在新授权下重新请求；写、命令和终端输入不自动重放。若执行可能已发生但回复丢失，返回“结果未知”，结合 request ID 与房主 journal 查询/重新读取核对，不声称失败即未执行。断线后的 provider 只返回远端不可用，不调用本地 fallback。
 
-## 4. 权限：复用 DSH，只补一条
+### 6.2 有界 journal，不是完整回滚
 
-### 4.1 直接沿用 DSH 的模式名
-
-| 档位 | 能做什么 | 谁能兜底 |
-|---|---|---|
-| `read-only` | 读房间目录内 | 我们（读边界） |
-| `workspace-write`（默认） | 读 + 写房间目录内 | `fs-sandbox` 围写，我们围读 |
-| `danger-full-access` | 整机读写 + 执行 | 无——这就是一次 SSH 登录 |
-
-房主在自己 DSH 里本来就见过这三个词（`/permission` 命令、设置里的 Permissions 选择器）。**不要发明新词**。
-
-### 4.2 DSH 已经有什么（全都已经装在用户机器上了）
-
-| 层 | 包 | 能力 |
-|---|---|---|
-| 模式词汇 | `dsh-sandbox` | `SandboxMode = 'read-only' \| 'workspace-write' \| 'danger-full-access'` |
-| 策略解析 | `dsh-sandbox-policy` | `resolve()` → `{ mode, workspaceRoot, additionalWritableRoots?, sessionId? }` |
-| fs 写围栏 | `dsh-fs-sandbox` | 拒绝返回 `FS_SANDBOX_DENIED`，工具渲染成 `[sandbox: file access denied under <mode> mode]` |
-| 命令围栏 | `dsh-bash-sandbox` + `ctx.sandbox.confine()` | bwrap / Landlock / Seatbelt / Windows ACL 受限令牌 |
-| 一次性授权 | `dsh-user-approval` | `approval/request` waterfall → `allowed-once \| rejected \| cancelled \| unavailable`（**要 agent + turn，房主用不了**，见 §4.5） |
-| 用户开关 | `dsh-permission-presets` | 把沙箱模式与审批策略捆成预设，`/permission` 切换 |
-
-房主的房间策略因此就是一份 DSH 的 `SandboxExecutionPolicy`：
-
-```ts
-const policy = {
-  mode: room.tier,                    // 就是 DSH 的 SandboxMode
-  workspaceRoot: room.root,           // 共享的那个目录
-  additionalWritableRoots: room.extra, // 可选
-}
-```
-
-写请求原样转给房主的 `ctx.fs`，`fs-sandbox` 自己会拦。我们**不重复实现写围栏**。
-
-### 4.3 我们只写这一条检查
-
-`fs-sandbox` 明确**只围写不围读**（原文：「读取、列出、元数据操作与只读监听均与 `fs-local` 完全一致」）。而房间是**目录共享**，读也必须围：
-
-```ts
-async function assertInside(room: Room, target: string) {
-  if (room.tier === 'danger-full-access') return            // 整机
-  const [root, file] = await Promise.all([
-    ctx.fs.resolve(room.root),
-    ctx.fs.resolve(target),
-  ])
-  if (!ctx.fs.contains(root, file)) throw RoomOutsideRoot(room.root, target)
-}
-```
-
-`contains(parent: FsTarget, child: FsTarget)` 收的是**已解析的 `FsTarget`**，不是字符串，所以要先 `resolve()`。两次 resolve 意味着**每次读两次远端往返**——可以按 `room.root` 缓存根句柄，只剩一次。
-
-就这一条。约 20 行，挂在远端 fs 的 `readText` / `list` / `stat` 上。
-
-`workspace-write` 下的写由 `fs-sandbox` 兜，我们的读边界让语义**比 DSH 的同名模式更严**（DSH 的 `workspace-write` 允许读整台机器）。这个偏差要在设置页写清楚。
-
-### 4.4 为什么 `workspace-write` 不含执行
-
-不是取舍，是这一档做不到：
-
-- DSH 的 `workspace-write` 用内核机制**兜写**（bwrap 只读绑定、Landlock、Seatbelt），能拦住 `rm -rf /`。
-- 但它**不兜读**。文档原话：`Network and process visibility are outside this vocabulary`。
-- 一个能执行任意命令的 shell，读整台机器是免费的：`~/.ssh/id_rsa`、浏览器 cookie、环境变量里的 API key。再往外发一条 `curl` 就出去了。
-
-**能执行的 shell = 能读完 + 能外带**。所以执行只能是 `danger-full-access`。
-
-想将来在受限档里给执行，必须自己做「只读绑定共享目录」的 runner，而不是复用 `bash-sandbox` 的默认 profile。v1 不做。
-
-### 4.5 入房授权：想复用审批，但用不了
-
-第一反应是复用 `ctx.userApproval`：一次 `allowed-once`，跟房主平时点「允许一次」是同一个控件、同一套文案、同一份审计事件。
-
-**但它的 `request()` 要求一个 Agent 和打开的 turn**：
-
-```ts
-async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
-  const session = req.agent.session
-  if (!this.approvalStateOf(session).turnOpen) throw new Error(
-    'approval.request() outside an open turn: … must be turn-enclosed …')
-```
-
-理由是审批必须写成 `approval/asked` + `approval/decided` 一对事件进会话日志，而一对事件必须被 turn 的提交边界包住。
-
-而房主按 D1 **不跑 agent**，开房那一刻也不会有 turn。所以这条直接用不了。
-
-**结论：用我们自己的确认 UI**（右栏 tab 里的一张确认卡片），决定写进房间审计流。审批的**语义**照抄 DSH——只给一次、失败即拒、随时可撤销——但不复用它的实现。
-
-> 如果哪天房主侧确实有了 agent 会话，再切回 `ctx.userApproval`，那时的审计链路是免费的。
-
-### 4.6 刻意不做
-
-规则引擎 / RBAC / 多租户；逐动作审批；合规报告；录像式审计；网络与进程隔离（`SandboxMode` 的词汇里就没有这些）。
-
----
-
-## 5. 能力复用：房间是一个 preset
-
-### 5.1 结论先行：零工具开发
-
-**这不是新决定。** v4 的 §8.1 标题就叫「首选：换 provider，不加工具」，并且已经点了「隔离 ctx（或 agent preset）」。是 v5 初稿把它降级成了回退项——那是一次退步，现在恢复。
-
-放弃 `room_read` / `room_write` / `room_bash` 一族工具的理由不是「多写几个文件」：
-
-- 工具名换了，模型要重新学一套——它熟的是 `read` / `write` / `edit` / `bash`；
-- 丢掉 `tool-fs` 的过期检测、观察策略、diff 呈现、沙箱升级提示；
-- 丢掉 `tool-bash` 的输出 spill、后台任务、`sandboxMode` 协商；
-- 上游每改进这两个工具一次，我们就要手工追一次。
-
-DSH 里已经有现成答案：**agent preset**。
-
-`dsh-agent-preset-registry` 的机制（原文）：
-
-- 每个 preset 声明一组 `plugins`，启动时创建**注册表拥有的 scope 和内存 Loader 树**；
-- 「preset 的服务提供方及其消费方必须共享同一个 `cordis:group` 隔离 realm」；
-- 「Agent loop 仍由宿主共享」。
-
-翻一下就是：**在隔离 realm 里把 `ctx.fs` / `ctx.subprocess` 换成房间实现，再把 `tool-fs` / `tool-bash` 原样挂进去**。模型看到的仍然是 `read` / `write` / `bash`，但这些工具读写的就是房主的文件系统。
-
-开关是 `ctx.isolate(name)`。DSH 自己在子 agent 里已经这么用：`childCtx.isolate('workingDirectory')`。
-
-### 5.2 房间 preset 的组成
-
-```yaml
-- id: preset-room
-  name: '@deepseek-ai/dsh-agent-preset'
-  config:
-    id: room
-    plugins:
-      - name: cordis:group
-        config:
-          isolate: [fs, subprocess, shell, workingDirectory]
-          plugins:
-            - '@dsh-remote-room/provider-fs'            # 我们写
-            - '@dsh-remote-room/provider-subprocess'    # 我们写
-            - '@deepseek-ai/dsh-sandbox-policy'
-            - '@deepseek-ai/dsh-shell'
-            - '@deepseek-ai/dsh-bash-local'             # inject = ['subprocess'] → 自动变远端
-            - '@deepseek-ai/dsh-tool-fs'
-            - '@deepseek-ai/dsh-tool-fs-search'
-            - '@deepseek-ai/dsh-tool-str-replace-editor'
-            - '@deepseek-ai/dsh-tool-bash'
-            - '@deepseek-ai/dsh-working-directory'
-```
-
-（`group` / `isolate` 的确切 YAML 方言以 `cordis-composition-reference` 为准，这里只表达结构。）
-
-三个关键事实：
-
-1. **`bash-local` 是 `static inject = ['subprocess']`** —— bash 执行器建立在 `ctx.subprocess` 之上。换掉 subprocess，bash 自动变远端，**一行 executor 都不用写**。
-2. **`tool-bash` 的 inject 是 `['tools','shell','systemPrompt','shellEnv','workingDirectory']`** —— 全都能在 realm 里提供。
-3. **`tool-fs` 只认 `ctx.fs`** —— 它不知道自己是本地还是远端，这正是我们要的。
-
-**上游明确警告**：「条目局部隔离不沿 Agent 注册 scope 传播：组外的普通 Context 查找（包括 `agent.ctx`）仍选择 Host realm。」所以 provider 和 consumer **必须写在同一个 group 里**；漏一个，工具就会静默拿到宿主的 fs。
-
-### 5.3 我们要写的 provider
-
-| provider | 实现 | 规模 |
-|---|---|---|
-| `provider-fs` | `ctx.fs` 远端实现，继承 `FileSystem` 基类；照 `fs-ssh` 写 | **≈120 行**——`fs-ssh` 全文 107 行，13 个方法每个就是一行 `this.call('fs.xxx', …)` 转发 |
-| `provider-subprocess` | `ctx.subprocess` 远端实现，`spawnTerminal` 转发到房主 | ≈250 行（`subprocess-ssh` 17 KB，含进程句柄、终端、信号） |
-| `provider-sandbox` | 可选。`danger-full-access` 直通；受限档要给 exec 才需要 | 小 |
-
-`watch()` 不覆写——基类默认以 `FS_IO_ERROR` 拒绝，和 `fs-ssh` 一致。`contains` 也不用往返：`fs-ssh` 用 `posix.relative` 在本地算，我们也一样。
-
-这才是真实工作量：**两个 provider 约 400 行，不是六个工具**。而且 `ctx.fs` 一写完，右栏文件树、`edit` 的 stale 检测、`grep`、diff 展示全部免费。
-
-### 5.4 为什么不是直接用 `fs-ssh`
-
-既然 DSH 已经有 `fs-ssh` / `subprocess-ssh` / `sandbox-ssh`，能不能直接挂上去？查过之后答案是**不能，但原因不是"我们用了 WSS"**。
-
-先澄清一件事：**远端 fs provider 这笔开销跟传输方式无关**。DSH 自己为了 SSH 也写了这一份——换成任何传输都要有人当那个"client 半边"。
-
-真正卡住的是这两条：
-
-| 障碍 | 事实 |
-|---|---|
-| `dsh-ssh` 要真的 sshd | 它 `spawn` 用户的 OpenSSH 客户端（Config 是「OpenSSH host alias」），再用**本地 stream socket**（`createConnection({ path })`）接转发通道。房主没有可达 sshd，这条就断 |
-| 远端要装 helper 二进制 | `ssh-helper-runtime` 是预编译可执行文件，装到远端后客户端会 `sha256` 校验摘要（`helper.ts`：`Installed entry whose digest is compared by the client`）。这正是 VS Code Server 那一套 bootstrap——我们方案里最想省掉的一步 |
-
-而 helper 干的事，房主的 DSH 本来就在干（`fs-local` + `fs-sandbox` 已经在他进程里）。**所以我们要写的不是 `fs-ssh` 的替代品，而是一条通往已在运行的服务的最薄适配层。**
-
-> 唯一的白拿路径：房主侧内嵌一个 `ssh2` 的 **Server**（不 `Listen`，直接喂我们的 mux 流），隧道里跑真 SSH，然后 `fs-ssh`/`subprocess-ssh`/`sandbox-ssh` 原样复用。代价是仍要部署 helper、多一层协议栈、以及要给房主开一个 loopback 入口。列为 §9 的可选后续，不进 v1。
-
-### 5.5 终端开在房主
-
-房主侧用 `ctx.subprocess.spawnTerminal(spec)`：它**不要求 Agent 作用域**，直接返回 `{ pid, output, write, resize, inspectForeground, signalForeground, terminate, done }`。
-
-不能用 `ctx.terminals.spawn(owner: Agent, …)`——它要一个 Agent，而房主**故意不跑 agent**（D1）。这是 v3 里写错、v4 修正的点。
-
-终端字节流走 `/dsh/pty/1.0.0` 独立流，和 fs 的 JSON-RPC 互不阻塞。
-
-`output` 是 `Readable`、`write` 收 `string`（文本语义）——这两条决定了背压与切分方式，见 §3.5 与 §6.1。
-
-### 5.6 文件树与模块划分
-
-```
-dsh-remote-room/
-├── package.json                     dsh.bundle.patch / dsh.client.inject / 双入口 exports
-├── cordis.patch.yml                 安装时注入：房间服务 + 房间 preset 定义
-├── tsdown.config.ts
-├── tsconfig.json
-├── src/
-│   ├── index.ts                     host 入口：Config 校验、服务注册、preset 生成
-│   ├── config.ts                    relayUrl / 房间根 / 默认档位 / 心跳与上限
-│   ├── types.ts                     纯类型：RoomMode、RoomGrant、帧、协议消息
-│   │
-│   ├── room/
-│   │   ├── room.ts                  房间状态机：idle → hosting → joined → closed
-│   │   ├── grant.ts                 档位 → SandboxExecutionPolicy（复用 DSH 字段）
-│   │   ├── invite.ts                邀请链接编解码（roomId + roomKey，key 在 fragment）
-│   │   ├── keys.ts                  X25519 ECDH + HKDF + AES-256-GCM
-│   │   └── audit.ts                 before/after 采集 + 环形缓冲
-│   │
-│   ├── transport/
-│   │   ├── transport.ts             抽象：send(frame) / onFrame / close
-│   │   ├── ws.ts                    WSS 客户端：连接、25s 心跳、退避重连、认证失败不重连
-│   │   ├── mux.ts                   8 字节帧头、streamId 路由、UTF-8 码点边界切分
-│   │   └── negotiation.ts           命名协议版本取交集
-│   │
-│   ├── protocol/
-│   │   ├── ctl.ts                   hello / auth / grant / ping / revoke
-│   │   ├── fs.ts                    方法表 + schemastery 校验
-│   │   ├── pty.ts                   终端流控制帧
-│   │   └── audit.ts                 单向追加
-│   │
-│   ├── host/                        房主侧（把请求落到本机能力上）
-│   │   ├── serve.ts                 分发 → ctx.fs / ctx.subprocess
-│   │   ├── fence.ts                 assertInside：唯一的读边界（§4.3）
-│   │   ├── fs-handler.ts            各 fs 方法的房主实现
-│   │   └── pty-handler.ts           spawnTerminal + bufferedAmount 背压
-│   │
-│   ├── guest/                       访客侧（把远端伪装成本地）
-│   │   ├── provider-fs.ts           ctx.fs 远端实现（继承 FileSystem 基类，照 fs-ssh）
-│   │   ├── provider-subprocess.ts   ctx.subprocess 远端实现
-│   │   ├── provider-sandbox.ts      可选：受限档的远端委托
-│   │   └── preset.ts                生成 §5.2 那份房间 preset 的插件行
-│   │
-│   └── client/                      Web 端
-│       ├── index.ts                 tab 注册
-│       ├── state.ts                 连接状态 / 房间列表
-│       ├── panel/
-│       │   ├── RoomPanel.tsx        三态外壳（§7）
-│       │   ├── FileTree.tsx         目录树
-│       │   ├── Preview.tsx          只读预览
-│       │   └── TerminalPane.tsx     xterm 挂载
-│       ├── HostCard.tsx             开房 / 选档位 / 复制邀请链接
-│       ├── GrantCard.tsx            访客入房确认
-│       └── locale.ts                文案字典
-│
-├── relay/                           独立部署，不进插件包
-│   ├── wrangler.toml
-│   └── src/
-│       ├── worker.ts                路由 + WebSocket 升级
-│       └── room.ts                  Durable Object：配对、转发、TTL
-│
-└── tests/
-    ├── mux.spec.ts                  分片 / 半包 / UTF-8 边界 / 并发开流
-    ├── keys.spec.ts                 密钥派生向量
-    ├── fence.spec.ts                越界拒绝
-    ├── transport.spec.ts            重连 / 心跳 / 认证失败不重连
-    └── provider-fs.spec.ts          对假 host 的完整往返
-```
-
-| 模块 | 对着参考仓库看哪儿 |
-|---|---|
-| `guest/provider-fs.ts` | `packages/ssh/fs-ssh/src`、`packages/fs/fs/src/index.ts`（基类与 `contains`） |
-| `guest/provider-subprocess.ts` | `packages/ssh/subprocess-ssh/src`、`packages/subprocess/subprocess/src/types.ts` |
-| `host/fs-handler.ts` | `packages/fs/fs-local/src`（stale 检查、原子写、diff 基线） |
-| `host/pty-handler.ts` | `packages/subprocess/subprocess/src/index.ts`（`spawnTerminal`） |
-| `host/fence.ts` | `packages/fs/fs-sandbox/src/containment.ts` |
-| `transport/mux.ts` | `reference/shellhub`（协议名与流）、`reference/open-remote-ssh`（重连判据） |
-| `relay/room.ts` | Cloudflare DO WebSocket Hibernation 文档 |
-
-**开发顺序**（与里程碑对齐）：`transport` → `protocol` → `host` → `guest/provider-fs` → `guest/preset` → `client` → `host/pty-handler`。
-
----
-
-## 6. 协议 v1
-
-### 6.1 流与帧
-
-一条 WSS，握手后按名字开流。帧头 8 字节：`type(1) | streamId(3) | length(4)`，大端。
-
-类型：`OPEN / DATA / CLOSE / RST / PING`。**不设窗口**——背压不靠协议层流控，见 §3.5。
-
-DATA 帧上限 64 KiB。切成 64 KiB 时必须在 **UTF-8 码点边界**回退，否则中文会被劈开。`spawnTerminal` 的 `output` 和 `write` 都是文本语义（`write(data: string)`），所以这条是硬要求，不是优化。
-
-加密：X25519 ECDH → HKDF-SHA256 → AES-256-GCM。AAD = `roomId | direction | seq`，防重放与跨流拼接。`roomKey` 只出现在邀请链接的 URL fragment 里（不进 Referer、不进服务器日志）。
-
-### 6.2 方法
-
-`fs` 流的方法表**就是 `FileSystem` 基类的 13 个抽象成员**，不多不少——因为 `provider-fs` 继承它，缺一个编译不过：
-
-| 流 | 方法 | 备注 |
-|---|---|---|
-| `ctl` | `hello` / `auth` / `grant` / `ping` / `revoke` | `grant` 返回生效档位与目录 |
-| `fs` | `resolve` / `processPath` / `fileUrl` / `contains` / `stat` / `lstat` / `readText` / `streamText` / `readBytes` / `readByteRange` / `listDir` / `writeText` / `editText` | JSON；路径是**房主坐标**，访客不得解释 |
-| `pty` | `open` / `data` / `resize` / `signal` / `close` | 字节流 |
-| `audit` | 单向追加：`{ts, op, path, before, after, result}` | 房主写，访客读 |
-
-`processPath` / `fileUrl` 在房主侧计算（访客侧无从得知真实路径），`contains` 由房主侧判定——这三个方法划清了「路径是坐标不是句柄」这条线（`fs-ssh` 同款处理）。
-
-**`ctx.fs` 里没有 `remove` / `rename` / `mkdir`。** 已核对基类，13 个抽象成员全是读、写、改、观察。这意味着：
-
-- `workspace-write` 档天然是「能改不能删」——删文件只能走 bash，也就是只有 `danger-full-access` 能做；
-- 这不需要额外设计，是 seam 的形状给的，要在产品文案里说清楚。
-
-### 6.3 上限与背压
-
-- 单次 `readText` 8 MiB（同 `fs-ssh`），超了要分页。
-- 单条控制帧 1 MiB，超了 `RST`。
-- PTY 输出不做应用层限流。背压直接用 `handle.output.pause()` / `resume()`：socket 的 `bufferedAmount` 超过 1 MiB 就暂停读，落回来再继续。这条压力一路顶到房主的 PTY，中间不需要任何窗口记账。
-- 不实现 `watch()`。文件树靠手动刷新 + 写后主动刷新（`fs-ssh` 也是这么处理的）。
-
----
+- 房主 journal 为权威，使用插件拥有的持久存储；A0 检查存储接口，A2 验证重启可读。保存 seq、request ID、对端/代际、操作、路径、状态、时间以及 grant/revoke/拒绝事实。
+- mutation 前记录尝试，成功后用同一次 fs 返回的 `FsWriteOutcome/FsEditOutcome` 记录结果。不要另做前读后读重造 diff 基线。
+- `write.before` 可为 null，内容为 diff 基线而非字节级备份。缺失、大文件、非 UTF-8、截断/淘汰必须标注，不承诺每次写完整回放或自动回滚。
+- TTL、总字节数、单条内容上限和保留策略显式配置；元数据/内容分页读取，只读导出。默认不持久记录文件全文和终端输出，内容保留需房主明确启用并可清理。
+- 写前 journal 不可用则拒绝新 mutation；执行后日志失败则标注审计缺口，不伪报“操作未执行”。进程崩溃可能留下未知结果，不宣称原子跨文件/日志事务。
 
 ## 7. UI 与兼容性
 
-右栏 tab 注册在 `sidebar.right.pane.tab`（keyed slot，`replaceRisk: none`，已有 17 个占用者，我们做一个正常占位者）。
+房主使用无 session 的本地 HostControl：优先验证 settings 扩展入口，必要时另选已支持的本机 surface；不能以 session 右栏作为唯一入口。确认前显示认证对端、根、模式、有效期、整机权限风险；昵称只是显示信息。撤销入口在连接期间始终可达，UI 不存在时仍可由服务到期关闭。
 
-三态：
+访客使用 session 右栏 `sidebar.right.pane.tab` 的独立 key，显示执行世界/房间、根、模式、连接状态、文件树和只读预览。断开保留内容时明确标为陈旧，禁用会触发远程操作的控件。树和预览通过已绑定房间接口读取，不假定内置树自动跟随 preset。
 
-| 状态 | 显示 |
+只注册需要的叶子槽，通过 `slots.inject` 等待声明；不抢 sidebar/main、不读取其他插件 DOM、不复用 key。与 better-sidebar 同时开启、槽位重建、插件卸载和重新加载均要测试。主题 token 与 locale 跟随宿主；不因“宿主已装包”就 runtime-import 另一 feature plugin 的私有 UI。
+
+## 8. 模块与文件树
+
+以下是实现目标，不是立即创建所有文件的清单。首版集中 ctl/fs schema，不预建多版本 negotiation、独立 audit 流、通用 types 大桶或 provider-sandbox。原 45 文件并非数量异常；优化的是职责与实施顺序，不是以更少文件为 KPI。
+
+```text
+dsh-remote-room/
+├── package.json / cordis.patch.yml / tsdown.config.ts
+├── tsconfig.json                   Host/Client 类型边界按实际构建配置补齐
+├── locale/{en,zh}.json / icon.svg   分发元数据；Client 文案由 locale.ts 管理
+├── src/
+│   ├── index.ts                    插件装配，不承载业务分支
+│   ├── config.ts
+│   ├── protocol.ts                 v1 DTO/schema/错误；不 import Node/React
+│   ├── room-service.ts             房间、grant/epoch、会话绑定、生命周期
+│   ├── invite.ts
+│   ├── security/
+│   │   ├── channel.ts              认证加密实现适配、nonce/代际
+│   │   └── access.ts               grant 验证、房主 policy、路径读写边界
+│   ├── wire/
+│   │   ├── connection.ts           WSS、心跳、断线
+│   │   ├── rpc.ts                  请求、流、超时、取消、错误
+│   │   └── flow.ts                 有界队列、消费反馈、调度
+│   ├── host/
+│   │   ├── controller.ts           受控本地 UI→Host 入口
+│   │   ├── files.ts                fs 调用；不重复实现原子写
+│   │   └── audit-store.ts          有界 journal、查询与保留
+│   ├── guest/
+│   │   ├── filesystem.ts           远端 FileSystem provider 导出入口
+│   │   ├── deny-subprocess.ts      受限档拒绝执行，禁止 fallback
+│   │   └── preset.ts               已验证的组合与显式绑定
+│   └── client/
+│       ├── index.ts / bridge.ts    槽注册与本地控制桥适配
+│       ├── state.ts / locale.ts    展示状态，不持有权威 grant
+│       ├── HostControl.tsx         无 session 可达
+│       ├── RoomPanel.tsx
+│       ├── FileTree.tsx
+│       └── Preview.tsx
+├── relay/
+│   ├── package.json / tsconfig.json / wrangler.toml / README.md
+│   ├── src/{worker,room}.ts
+│   └── tests/room.spec.ts           配对、休眠恢复、TTL、限额
+└── tests/
+    ├── package-exports.spec.ts      安装视图与产物
+    ├── realm.spec.ts               真实 Loader、两个会话、Host 不变
+    ├── channel.spec.ts             帧、取消、慢消费者、资源上限
+    ├── crypto.spec.ts              向量、冒充中继、重放与重连
+    ├── access.spec.ts              伪造 policy/target、链接、全部文件入口
+    ├── lifecycle.spec.ts           revoke/到期/断线/卸载、未知写结果
+    ├── files-audit.spec.ts         fs 往返、原子结果、缺口与保留
+    └── controller-ui.spec.ts       无 session 控制、用户专有授权、兼容
+```
+
+执行阶段另加 `host/processes.ts`、`host/terminals.ts`、`guest/subprocess.ts`、`client/TerminalPane.tsx` 及对应测试、导出入口。不提前创建空壳。若 access 或 channel 复杂度增长，再按独立职责拆开；不得为凑文件数把安全检查、密码和 UI 混进一个 serve 文件。
+
+依赖方向：Client → 本地桥 → RoomService；Guest provider → RPC；Host handler → access → 本地能力；wire 与 security 不依赖 UI；relay 不依赖插件运行时。业务类型随所属模块定义，只有真正跨 wire 的 DTO/schema 集中在 protocol。
+
+## 9. 验证顺序与验收
+
+按纵切推进，不先把所有 transport/protocol/handler 写完再接 UI。阶段未通过不能把待验证能力写成已支持。
+
+| 阶段 | 范围 | 退出条件 |
+|---|---|---|
+| A0 接线 PoC | 打包导出、完整 realm、无 session HostControl、本地桥、存储接口；可用假远端 | 真实 Loader 可挂载，无 service 泄漏；本地/远端寻址方案确认；两个会话不串绑定；组外 Host 能力不变；用户专有授权不可由 agent 触发 |
+| A1 安全通道与 relay | 选定认证握手实现、固定 v1、有界 RPC/流控、独立 DO、grant/revoke/expiry | 假中继替换/重放失败；未授权无真实能力；重连新代际；休眠恢复和滥用测试；冻结上限/失活预算，测网络与配额 |
+| A2 只读纵切 | 同 OS provider-fs + 全文件读入口 access + 树/预览 + 基本 journal | 正常读取；越界、伪造 target、链接元数据泄漏被阻止；TOCTOU 威胁模型与处置记录；重启审计可读；断线不读本地哨兵 |
+| A3 写入纵切 | 房主盖章 policy、write/edit、observation policy、outcome 审计 | room 内成功、room 外（包括根外 temp）拒绝、read-only 拒绝；过期版本行为明确；撤销竞态/未知结果不重放；审计失败行为可见 |
+| A4 文件版收口 | 生命周期、兼容、分发、错误/locale、journal 分页与保留 | better-sidebar 共存、槽重建与 unload 无泄漏；支持版本矩阵与已知限制齐全，形成文件版 MVP |
+| A5 执行扩展 | 普通 spawn、collect、jobs/spill、PTY、shell/env、danger 档 | 按房主 OS 选 shell；受限档全部拒绝执行；命令/PTY 真在房主；取消/撤销/失活/unload 等待退出且报告清理失败 |
+| A6 后续验证 | 受约束搜索、Windows↔POSIX 消费者适配；编辑器等另立需求 | 每项分别证明可复用性；不把 WebRTC、多房间或 SSH 隧道打包成必做打磨 |
+
+### 9.1 性能与失效实验
+
+从 A1 记录 DO 与可用自建 relay 的网络环境、区域、RTT、成功率与费用；没有自建端时标缺证，不编造比较结论。若寻址或 realm 路线不成立，先记录差距、评估薄工具适配/上游改进，再决定回退；不因一次失败自动换整套技术栈。
+
+实验固定参数后才能报告达标。A1 先采用以下测试基线，不冒充最终生产默认值：
+
+- 预热 20 次，读取 4 KiB 文件 200 次，空闲与持续 10 MiB 合成 bulk 输出两组；记录 p50/p95/p99、吞吐、超时和各级队列峰值。
+- 消费者暂停 30 秒后恢复，另测并发 8 个读请求；队列不得超过配置硬上限，不得丢控制消息或把截断结果当完整数据。
+- 候选体验门槛：4 KiB read 的 p95 ≤ 500ms，bulk 下 p95 ≤ 空闲两倍；不满足先区分路由、队列和调度原因，再调整默认中继/产品范围。
+- 心跳间隔、失活超时、grant TTL 与清理超时在 A1 填入实测配置，断线与撤销测试报告实际检测/回收时间；不得仍用“即时响应”代替指标。
+
+### 9.2 实施前仍需决策
+
+| 未决项 | 负责人/关口 | 不能越过的条件 |
+|---|---|---|
+| 同会话双目标还是明确分会话 | 产品确认，A0 | 不能丢失本地/房主工具可区分的要求 |
+| 无 session bridge/surface 与持久存储 API | A0 运行时 Inspect + smoke | 不暴露房主 DSH Web，不用 Agent 假充入口 |
+| 密钥交换库、模式与 wire 编码/上限 | A1 | 未认证不能接触真实能力 |
+| 远端不可信输入下链接竞态支持范围 | A2 | 不拿现有 fs-sandbox 的本地威胁模型当安全证明 |
+| 精确 DSH/Node 支持版本 | A0 固定，发布持续验证 | 参考 clone 与安装版差异必须记录，能力缺失失败关闭 |
+
+## 10. 证据与参考
+
+源码参考固定在 `reference/deepseek-harness` 的 `22ddee37`，不是当前安装版接口的替代权威。2026-10-26 实时 Inspect 已确认 `sandboxPolicy.resolve` 支持 agentless fallback、preset 的 `select` 限首 turn 前、`serviceFor` 显式取隔离服务，以及 session 右栏的作用域；未做任何插件实现验证。
+
+| 事实 | 本地参考路径（相对 DSH clone） |
 |---|---|
-| 未连接 | 置灰图标，点击开配置 |
-| 已连接 | 文件树 + 只读预览；`danger-full-access` 时多一个终端按钮 |
-| 断开 | 保留最后内容，顶部一条「已断开，重连」 |
+| 显式 policy、默认写围栏、temp 语义 | `packages/fs/fs-sandbox/src/index.ts`；`packages/sandbox/sandbox/src/roots.ts` |
+| fs 同步/异步 seam、结果 before/after | `packages/fs/fs/src/{index,types}.ts`；`packages/ssh/fs-ssh/src/index.ts` |
+| realpath、列表子项和原子变更 | `packages/fs/fs-local/src/{index,fsio}.ts` |
+| 搜索直接 spawn 与访客 rg 路径 | `packages/fs/tool-fs-search/src/{index,search-core}.ts` |
+| observation policy 不等于工具本体 | `packages/fs/{tool-fs,fs-observation-policy}/src/index.ts` |
+| 跨 OS 消费者问题 | `packages/fs/tool-str-replace-editor`；`packages/session/working-directory`；`packages/shell/{tool-bash,shell-env,bash-local}` |
+| preset 共享代际、realm 与泄漏审计 | `packages/preset/agent-preset-registry/{README.zh.md,src/mount.ts}` |
+| 普通进程/PTY 契约 | `packages/subprocess/subprocess/src/{index,types}.ts`；`packages/ssh/subprocess-ssh` |
+| 无 Agent 审批限制、本地桥 | `packages/interaction/user-approval`；`packages/api/{gateway,remotes}` |
 
-**兼容性三条禁令**（对着 `dsh-better-sidebar` 的实测行为）：
+外部资料在本轮审阅通过 Tavily CLI 检索并读取正文；平台数值为检索时状态，部署前重核：
 
-1. 不注册 `sidebar` 槽——那是整列，注册即替换别人。
-2. 不复用别人的 key。
-3. 不让右栏成为唯一入口——右栏是 session 作用域，没开会话就不显示（可接受），所以**工具和命令必须独立可用**。
-
-`dsh-better-sidebar` 只碰 `sidebar.right.pane.tab`、`.title`、`conversation.session.header.utilities`、`settings.section`、`shell.overlay`，不碰 `sidebar` / `panellist` / `main`。我们同样只碰前四个中的前两个 + `settings.section`。**不抢 `main`**——「放大模式」留到用户明确要求时再做。
-
----
-
-## 8. 里程碑
-
-| 阶段 | 内容 | 验收 |
-|---|---|---|
-| **M0** | 传输打底：Worker + DO + 自写 mux + 两条命名协议 | 一条 WSS 上同时跑 ctl + fs；**大终端流量下 fs 请求仍即时响应**；RTT 与 p95 实测记录在案（见 §3.5） |
-| **M1** | **realm 隔离验证**（最高风险项提前）：空房间 preset 里换掉 `ctx.fs`，看 `tool-fs` 是否真的读到远端 | 同一个 `read` 工具，切 preset 前后读到的目录不同；组外查找仍拿宿主 fs |
-| **M2** | `provider-fs` + `host/fence` + `read-only` 档 | 访客用 `read` 读到房主目录；越界路径被 `ROOM_OUTSIDE_ROOT` 拒 |
-| **M3** | 右栏 tab + 开房/邀请流程 + 确认卡片 | 房主点一次就开；访客粘链接就连上 |
-| **M4** | 写入：`writeText` / `editText`，接房主 `ctx.fs` + `fs-sandbox` | `workspace-write` 下写房间内成功、写房间外被 `FS_SANDBOX_DENIED` |
-| **M5** | 审计：`before`/`after` + 回放 | 每次写都能看到改前改后 |
-| **M6** | `provider-subprocess` + 终端：`bash-local` 自动变远端，`spawnTerminal` 转发 | 只在 `danger-full-access` 开放；关 tab 时 PTY 被回收 |
-| **M7** | 打磨：CodeMirror、多房间、可选 SSH-over-stream | — |
-
-M0/M1 是两个必须先过的验证，**不要**在它们通过前写 UI。M1 之所以提前：整个「零工具」方案压在这条上，赌错就要退回 `room_*`。
-
----
-
-## 9. 风险与未决
-
-| 风险 | 影响 | 处置 |
-|---|---|---|
-| **realm 隔离在房间 preset 里不成立** | 整个「零工具」方案落空 | **M1 先验证**；失败则退回薄版 `room_*`——transport / protocol / host 全部可复用，只多写 4 个工具壳 |
-| preset 是 pre-stable API | 上游升级会破 | 只依赖两个已文档化面：`plugins` 列表、`cordis:group` 隔离；不碰 `mount.ts` 内部实现 |
-| 右栏文件树是否跟随 session 的 `ctx.fs` | 不跟随的话 room 会话里树仍显示本地 | M3 验证；不跟随就自己渲染只读树，工具链不受影响 |
-| 自写 mux 的正确性 | 帧边界错会让终端吐乱码 | 单测覆盖分片、半包、乱序、并发开流、UTF-8 边界切分；先只跑 ctl+fs |
-| 中继延迟 | 终端手感变钝（多一跳） | M0 实测 RTT；超标就上 WebRTC 直连，协议不动 |
-| 中继在境内可达性 | 默认 Cloudflare 可能慢或不可达 | relay 地址做成配置；备选自建 Node 转发，协议一行不改 |
-| 想白拿 SSH 家族（`fs-ssh` 等）的诱惑 | 会拖进 sshd 与 helper 部署 | v1 不碰；要做得接受「房主装 helper 二进制」，见 §5.4 |
-| DO 免费额度 | 大流量终端可能顶到上限 | M0 里量一次；超了就降级为「终端默认关」 |
-| Windows ⇄ POSIX 路径 | 房主 Windows、访客 Linux 时路径语义不一致 | 路径一律当**房主坐标**的不透明字符串；只在房主侧规范化 |
-| 右栏已 17 个 tab | 再加一个会更挤 | 接受；用户自己会关 |
-| PTY 在房主 unload 时泄漏 | 孤儿进程 | 房主插件 `dispose` 时遍历活跃 PTY 并 `terminate()` |
-| 多房间 | 一人同时开几个 | v1 单房间；数据结构留 `Map<roomId, Room>` |
-
-**已消除的风险**（相对 v4）：
-
-- ~~权限规则表过重~~ → 缩成一条 `assertInside`，写委托给 `fs-sandbox`。
-- ~~「SSH 建立后就是完全权限」的表述含糊~~ → 改成有依据的结论：沙箱模式兜写不兜读，所以执行只能落在 `danger-full-access`。
-- ~~重复实现 fs/bash 工具~~ → 房间做成 preset，工具零开发。代价是换来「realm 隔离」这个新风险，已提前到 M1。
-
----
-
-## 10. 参考
-
-- DSH 源码（MIT）：`packages/ssh/{fs-ssh,subprocess-ssh,sandbox-ssh}`、`packages/fs/fs-sandbox`、`packages/sandbox/sandbox-policy`、`packages/interaction/{user-approval,permission-presets}`、`packages/fs/tool-fs`、`packages/terminal`
-- [open-remote-ssh](https://github.com/jeanp413/open-remote-ssh) — TypeScript，隧道/重连/服务端引导的完整实现
-- [ShellHub](https://github.com/shellhub-io/shellhub) — 反向隧道、命名协议、零入站端口（Apache-2.0）
-- [VS Code Remote-SSH 文档](https://code.visualstudio.com/docs/remote/ssh) — 心智模型（扩展本体闭源）
-- Cloudflare Durable Objects（WebSocket Hibernation API）
+- [MDN WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) 与 [bufferedAmount](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/bufferedAmount)：缺少接收背压、本地发送队列的含义。
+- [Node 22 WebSocket](https://nodejs.org/docs/latest-v22.x/api/globals.html#class-websocket)：客户端 API 稳定状态。
+- [Cloudflare DO WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)、[Limits](https://developers.cloudflare.com/durable-objects/platform/limits/)、[Pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)：休眠、消息限制、配额与费用。
+- [Noise Protocol Framework](https://noiseprotocol.org/noise.html)：认证握手、PSK、transcript、密钥与 nonce 的设计参照，不等于已选实现。
+- [VS Code Remote-SSH](https://code.visualstudio.com/docs/remote/ssh)、[open-remote-ssh](https://github.com/jeanp413/open-remote-ssh)、[ShellHub](https://github.com/shellhub-io/shellhub)：部署、隧道、生命周期与逻辑通道参考。

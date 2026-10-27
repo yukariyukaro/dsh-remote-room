@@ -1,11 +1,15 @@
 node_modules/
 lib/
 dist/
+artifacts/
 *.tsbuildinfo
 .wrangler/
 .DS_Store
 Thumbs.db
 *.log
+
+# 本机运行时启动垫片（含本机绝对路径，见 scripts/e2e-ui/README 说明）
+scripts/e2e-ui/tools/
 
 # 只读参考仓库：浅克隆，不进版本库（见 reference/README.md）
 /reference/deepseek-harness/

@@ -1,0 +1,19 @@
+name = "dsh-byte-relay"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+TTL_MS = "600000"
+MAX_MESSAGE_BYTES = "65536"
+MAX_BUFFERED_BYTES = "262144"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayRoom"]
+
+# Set with `wrangler secret put CREATE_TOKEN`; configure ingress rate limiting before exposure.

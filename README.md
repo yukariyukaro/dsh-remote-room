@@ -1,69 +1,75 @@
 # dsh-remote-room
 
-> 一个 DSH 插件：让「帮忙的人」用自己的 DSH agent，去操作「被帮的人」电脑上的文件和终端。
+让访客使用自己的 agent、模型和 API key 操作房主授权的文件与可选进程，不向访客公开房主的 DSH Web。
 
-**当前状态：方案阶段，还没有代码。** 下一步是 M0 传输验证。
+**当前为开发版，尚未完成完整交付验收。** 文件、八个显式远端工具、普通执行、真实 PTY、独立 sidebar/设置入口和远端预览均已实现。106 项回归（含 20 项客户端状态机单测）通过；`0.1.2` 已通过 Electron/BoringSSL carrier 下的已安装双 profile 文件、执行、真实 PTY 和撤权测试。真实 Web 双端 UI 已走通安装/启用、创建/加入、批准、会话右栏文件预览、**本地与同名远端文件共存**、撤权过期快照，以及第二个全权限房间的普通执行与真实 PTY（含 resize、显式 stdin 与确认终止）。packaged Desktop 已走通安装/启用、设置、原生 SSE 200，并与 Web 双向跑通跨载体创建/批准/预览/撤权——包括 Desktop 作访客时在原生侧栏打开远端文件。点击测试发现并修复了 SSE GET 注册导致的状态不刷新（`0.1.4`）与连接状态失真（`0.1.5`）两处缺陷。Desktop ↔ Desktop、原生侧执行面板、Quit 菜单点击与持久化重启仍未覆盖，不能把局部成功称为完整 UI 验收。精确证据见 [开发状态](docs/development-status.md)。
 
-## 一句话架构
+## 能力与权限
 
-两条**出站** WSS 连到同一个中继房间，之间跑自写多路复用 + 命名协议 + 端到端加密。房主不监听任何端口、不跑 agent、不开 Web UI。
+- 两端各安装插件，通过两条出站 WSS 连接独立中继；房主不新增入站监听端口。
+- 房主创建邀请，访客加入，TLS 身份认证后房主在本地 UI 批准一次。授权有期限，可随时撤销；创建与批准没有 agent 工具入口。
+- `read-only`：共享根内读取；`workspace-write`：共享根内读写；二者都拒绝任意命令。`danger-full-access` 才允许整机文件与进程能力，其范围包括房主账户的网络权限，不是 cwd 沙箱或系统提权。
+- 保留现有本地文件、命令工具和 `ctx.fs`，另加明确的 `remote_*` 工具。每次传入 room ID、epoch 和房主路径；断线、撤权、未知结果不会回落到访客机器，也不会自动重放写入或 stdin。
+- 房主可以没有 agent/session；设置中的远程工作区入口可独立批准与撤权。文件在会话 sidebar 的远程工作台中打开。
 
-## 三条必须记住的约束
+## 远程文件与已有 sidebar
 
-1. **房主只出能力**：目录、可选终端、审计。没有 agent、没有会话、没有 Web UI。
-2. **房主零入站端口**：只有出站 WSS，NAT 后面也能用。
-3. **权限直接用 DSH 自己的**：`read-only` / `workspace-write` / `danger-full-access`，不自造档位。
+不覆盖 `file` 协议、不替换本地文件 tab、不改变 better-sidebar 的布局服务。远程地址使用独立身份：
 
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [`docs/dsh-remote-workspace-plan.md`](docs/dsh-remote-workspace-plan.md) | **当前方案 v5**：决策表、技术栈、权限模型、协议、里程碑、风险 |
-| `docs/archive/` | 历史版本（v1 会话共享 → v2 能力 RPC → v3 provider 替换 → v4 反向隧道 → v5 复用 DSH 权限）。只做追溯，不代表现状 |
-
-## 技术栈速查
-
-| 项 | 选择 |
-|---|---|
-| 语言 | TypeScript，ESM only |
-| 打包 | `tsdown`，单包双入口（host + client） |
-| 运行时依赖 | **1 个**：`@deepseek-ai/schemastery` |
-| 传输 | Node 全局 `WebSocket` → 中继（默认 Cloudflare DO，可换自建/WebRTC） |
-| 多路复用 | 自写，约 60–80 行，无窗口（背压走 `Readable.pause()`） |
-| 权限 | 复用 `dsh-sandbox-policy` 的模式 + `dsh-fs-sandbox` 的写围栏 |
-| **工具** | **零开发**：房间是一个 agent preset，在隔离 realm 里换掉 `ctx.fs` / `ctx.subprocess`，`read`/`write`/`edit`/`bash` 原样复用 |
-| 终端 | 房主 `ctx.subprocess.spawnTerminal` |
-
-## 接下来：M0
-
-验收标准：
-
-- 一条 WSS 上同时跑 `ctl` + `fs` 两条命名协议；
-- 大终端流量下 `fs` 请求仍即时响应；
-- RTT（境外 DO / 自建转发各一次）与 `room_read` 的 p95 延迟记录在案。
-
-任一项超标就上 WebRTC 直连，mux 与协议一行不改。
-
-## 参考实现（只读克隆，已 gitignore）
-
-| 项目 | 本地路径 | 用来看什么 |
-|---|---|---|
-| DSH 源码（MIT，`22ddee37`） | `reference/deepseek-harness/` | `packages/ssh/*`（远端 provider 形状）、`fs/fs-sandbox`、`sandbox/sandbox-policy`、`subprocess/subprocess` 的终端句柄 |
-| open-remote-ssh（MIT，`6b5b86f`） | `reference/open-remote-ssh/` | 隧道 = 本地监听 + `forwardOut`、重连判据、`execChannel` 不分配 PTY |
-| ShellHub（Apache-2.0，`0d847ff`） | `reference/shellhub/` | 反向隧道、按流协商协议名、设备端不 `Listen` |
-
-详见 [`reference/README.md`](reference/README.md)（含具体文件清单与早期检索原文索引）。
-
-## 目录
-
-```
-docs/                          设计文档
-  dsh-remote-workspace-plan.md     当前方案 v5
-  archive/                         历史版本（v1–v4）
-reference/                     只读参考（克隆不进版本库）
-  deepseek-harness/              DSH 源码
-  open-remote-ssh/               TS 版 Remote-SSH
-  shellhub/                      反向隧道参照
-  research/                      早期检索原文 + DSH preset patch 样例
+```text
+dsh-resource://remote-room-file/room/<id>/epoch/<epoch>/path/<逐段编码的房主路径>
 ```
 
+专用预览 tab 支持有界 UTF-8 文本与 PNG/JPEG/GIF/WebP。Markdown、HTML、SVG 当前按源码显示，不执行；PDF 和其他二进制暂无渲染器。预览不会交给访客本地文件读取器，没有默认落盘缓存。撤权后已读取内容只能作为标记过期的快照，不能撤回已经被人或 agent 看到的数据。
+
+## 安装与运行
+
+开发目标是 **DSH 0.2.1-rc.3、Node >=24.9**。当前本机验证使用 Node 24.21.0 / OpenSSL 3.5.8；其他 OS 与运行时版本尚未形成支持矩阵。
+
+```text
+pnpm install --ignore-scripts
+pnpm run typecheck
+pnpm run test:e2e
+pnpm run build
+pnpm run check:package
+```
+
+运行 DSH 插件管理器安装构建后的项目目录。插件使用 DSH 的 `fs`、`subprocess`、`tools`、`connection` 与 `storage` 服务，要求实际的 rc.3 `SandboxedFileSystem`。审计默认使用已有 `json` KV backend；没有该 backend 时应显式配置，不能悄悄退化为无审计。中继部署启用创建门禁时，在房主插件 Config 中设置 `relayCreateToken`，不要将它附加到邀请或分发给访客。
+
+两端打开设置 → 远程工作区。房主填写 WSS 中继 URL、绝对共享目录与权限，创建邀请；访客粘贴邀请；房主核对待批准连接并确认。邀请包含高熵秘密，只交给受信任访客，不发布到日志、issue 或公开页面。生产地址必须 WSS；测试仅允许 literal loopback 的 WS。
+
+中继是独立部署单元，参见 [relay/README.md](relay/README.md)。Node relay 有真实网络测试；Cloudflare Worker + SQLite DO 仍是候选实现，尚未完成实际部署、休眠与压力验证，不应把本地结构恢复测试视为生产认证。
+
+## 模块
+
+| 目录 | 职责 |
+|---|---|
+| `src/security` | 原生 TLS 1.3 双向证书认证、房间凭证生成与精确证书 pin |
+| `src/wire` | 有界 WebSocket Duplex、credit 与 framed RPC |
+| `src/room-service.ts` | 房间、认证、grant epoch、过期/断线/撤销与资源生命周期 |
+| `src/host` | 全入口文件授权、审计、主机进程与本地认证 UI bridge |
+| `src/guest` | 显式远端工具、读前观察与版本 guard |
+| `src/client` | 房间面板、远端预览与独立 resource/tab 注册 |
+| `relay` | 不依赖 DSH 的中继服务 |
+| `tests/e2e`、`tests/security` | 真实网络、真实 DSH provider、ToolRuntime 与安全拒绝测试 |
+| `scripts/e2e-profiles.mjs` | 独立临时 DSH profile 的真实 CLI/Loader/HTTP 与 Agent 工具测试 |
+| `scripts/e2e-ui-web.mjs` | 双隔离 Web 的真实安装、房间与会话点击旅程 |
+| `scripts/e2e-ui-desktop.mjs` | 原生 Desktop 双根隔离、实际安装/启用、owned CDP 与进程回收；`--mode mixed`（Desktop 主机）/ `--mode mixed-guest`（Desktop 访客）与 Web 跨载体配对 |
+
+## 测试口径与已知限制
+
+局部 provider 测试和进程内两个端点测试，不等于完整已安装插件验收。测试按以下层次报告，避免混称：原生网络/TLS、真实 provider、真实工具流水线、独立 DSH profile、实际浏览器与已有插件共存。
+
+文件操作逐组件拒绝符号链接/junction，并固定共享目录身份；仍有 canonicalize 到 syscall 的残余 TOCTOU，不承诺抵御房主本地恶意管理员并发置换。底层 DSH `listDir` 会先缓冲目录，返回条数限制不是底层无限目录内存保证。审计保存操作与原子结果元数据，不默认保存文件内容，不提供完整回滚。
+
+邀请 v2 携带房间专用证书与私钥，TLS 双向验证与精确 pin 证明对方持有邀请凭证，不证明某个自然人身份。同一邀请的持有人可以冒充任一角色。浏览器 owner admission 排除独立 API owner，但不是“真人证明”，也不防恶意本地 agent 操控已登录的房主浏览器。
+
+## 设计记录
+
+- [实现计划 v6](docs/dsh-remote-workspace-plan.md)：原阶段方案；与实现变化以 ADR 和开发状态为准。
+- [远程文件身份](docs/decisions/0001-remote-file-identity.md)
+- [原生 TLS PSK 初选与弃用原因](docs/decisions/0002-native-tls-psk.md)
+- [Desktop 兼容的双向 TLS](docs/decisions/0003-desktop-compatible-mtls.md)
+- [真实 profile 验证](docs/test-profiles.md)
+- [v5 冻结归档](docs/archive/dsh-remote-workspace-plan.v5.md)
+- [只读参考索引](reference/README.md)

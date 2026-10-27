@@ -21,7 +21,7 @@
 | `packages/sandbox/sandbox-policy/` | 逐会话模式解析、`additionalWritableRoots` |
 | `packages/fs/fs-sandbox/` | 写围栏（只围写不围读）、`FS_SANDBOX_DENIED` |
 | `packages/fs/fs/src/index.ts` | `ctx.fs` seam：`resolve()` / `contains(parent, child)` |
-| `packages/fs/tool-fs/`、`tool-fs-search/` | `room_*` 工具要照抄的 schema、错误与呈现 |
+| `packages/fs/tool-fs/`、`tool-fs-search/`、`fs-observation-policy/` | 工具优先复用；核对搜索的 subprocess/本地 rg 路径依赖与独立观察策略，不把换 fs provider 当成全部工具远端化 |
 | `packages/interaction/user-approval/` | 为什么房主用不了它：`request()` 要求 agent + 打开的 turn |
 | `packages/subprocess/subprocess/src/types.ts` | `SubprocessTerminalHandle`：`output: Readable`、`write(text)`、`resize`、`signalForeground`、`terminate` |
 | `packages/terminal/` | `ctx.terminals`（要 Agent，房主用不了） |
