@@ -87,6 +87,12 @@ describe('one-click share resolution', () => {
     await expect(resolveShare({ root: ROOT }, harness({ directory: false }).deps)).rejects.toMatchObject({ code: 'ROOT_NOT_DIRECTORY' })
   })
 
+  it('falls back to the deployment relay when no address is saved yet', async () => {
+    const h = harness({ settings: { lastRoot: ROOT } })
+    h.deps.config.relayUrl = 'wss://relay.example.test'
+    await expect(resolveShare({}, h.deps)).resolves.toMatchObject({ relay: 'wss://relay.example.test', scope: 'public' })
+  })
+
   it('still shares when the preference cannot be stored', async () => {
     const h = harness({ settings: { lastRoot: ROOT, relayUrl: 'wss://relay.example.com' }, writeFails: true })
     await expect(resolveShare({}, h.deps)).resolves.toMatchObject({ root: ROOT })

@@ -33,7 +33,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     create: input => resolveShare(input, { settings, relays, config }),
     settings: () => settings.current(),
     update: patch => settings.update(patch),
-    defaultRelay: () => config.relayUrl,
+    defaultRelay: () => process.env.DSH_REMOTE_ROOM_RELAY || config.relayUrl,
   })
   ctx.effect(() => async () => {
     const failures: unknown[] = []

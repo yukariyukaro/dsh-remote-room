@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { until } from './web-fixture.mjs';
 
 const names = {
@@ -130,16 +130,13 @@ async function openLocalCopy(guest) {
 
 export async function businessJourney(endpoints, { root, evidence, report, results, secrets, resources, visual, processes, coexist = true, shot = maskedScreenshot }) {
   const [host, guest] = endpoints;
-  // A relay is a transport fixture here: sharing targets separate networks by default.
-  const { build } = await import('esbuild');
-  const relayModule = path.join(root, 'relay.mjs');
+  // The suite talks to the deployed public relay: sharing targets separate networks.
   const repo = fileURLToPath(new URL('../../', import.meta.url));
-  await build({ entryPoints: [path.join(repo, 'relay/src/server.ts')], outfile: relayModule, bundle: true, platform: 'node', target: 'node24', format: 'esm', packages: 'external' });
-  const wsEntry = fileURLToPath(import.meta.resolve('ws'));
-  const source = await readFile(relayModule, 'utf8');
-  await writeFile(relayModule, source.replaceAll('from "ws"', `from ${JSON.stringify(pathToFileURL(wsEntry).href)}`));
-  const { startRelay } = await import(pathToFileURL(relayModule).href);
-  const relay = await startRelay({ host: '127.0.0.1', port: 0 }); resources.push(() => relay.close());
+  const relayUrl = process.env.RR_PUBLIC_RELAY ?? '';
+  const relayToken = process.env.RR_RELAY_TOKEN ?? '';
+  if (!relayUrl.startsWith('wss://')) throw new Error('Set RR_PUBLIC_RELAY to the deployed wss relay before running the journey');
+  if (relayToken === '') throw new Error('Set RR_RELAY_TOKEN to the relay creation token before running the journey');
+  report(`relay: ${relayUrl}`);
   const seed = 'remote-ui-golden-seed-2026\n';
   const shared = path.join(host.base, 'workspace');
   await writeFile(path.join(shared, 'shared.txt'), seed);
@@ -164,9 +161,10 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await mkdir(path.join(shared, 'media'), { recursive: true });
   await writeFile(path.join(shared, 'media', 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'));
 
-  // Default reach is cross-network: fill the relay once, then the directory, then share.
+  // Zero input: the deployment relay must already be prefilled, so sharing needs no URL typing.
   const hostPanel = await openRemoteSettings(host.page);
-  await hostPanel.getByPlaceholder(/wss:\/\//u).fill(relay.url.replace(/^ws:/u, 'ws:'));
+  const relayField = hostPanel.getByPlaceholder(/wss:\/\//u);
+  assert.equal(await relayField.inputValue(), relayUrl, 'The public relay must be prefilled from the deployment config');
   const pathInput = hostPanel.getByPlaceholder(/例如/u);
   if (!await pathInput.isVisible().catch(() => false)) await hostPanel.getByRole('button', { name: /^(直接输入路径)$/u }).click();
   await pathInput.fill(shared);
@@ -177,11 +175,11 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await until(async () => await inviteField.count() && await inviteField.inputValue(), 'host invitation UI');
   const invitation = await inviteField.inputValue(); secrets.add(invitation);
   assert.match(invitation, /^dsh-room:\/\/join\/v2#/u, 'One-click share must produce a v2 invitation');
-  assert.match(invitation, /relay=ws%3A%2F%2F127\.0\.0\.1%3A\d+/u, 'The invitation must carry the configured public relay');
+  assert.ok(invitation.includes(`relay=${encodeURIComponent(relayUrl)}`), 'The invitation must carry the deployment relay');
   const roomTitle = await hostPanel.locator('.rr-herotext h1').innerText();
   assert.equal(roomTitle, path.basename(shared), 'Room name must be the shared directory name');
-  results.stages.push(`host: shared ${path.basename(shared)} over a relay typed once (invitation retained in memory only)`);
-  report('host: created an invitation; room name equals the directory name');
+  results.stages.push(`host: shared ${path.basename(shared)} with the prefilled public relay (invitation retained in memory only)`);
+  report('host: created an invitation through the public relay; room name equals the directory name');
 
   // Guest: paste the invitation, request access.
   const guestPanel = await openRemoteSettings(guest.page);
@@ -268,7 +266,7 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   results.stages.push('host: 结束共享; guest retained snapshot labeled stale and reload disabled');
   report('PASS UI 一键共享/加入/允许/远端预览/结束共享 (read-only, no model call or UI editing)');
   if (processes) {
-    const { processJourney } = await import('./web-process.mjs');
-    await processJourney(endpoints, { evidence, report, results, relay: null, shared });
+    // The exec/PTY journey still drives the pre-0.3 form; port it before claiming that coverage.
+    throw new Error('--processes has not been ported to the one-click share UI yet');
   }
 }

@@ -10,6 +10,9 @@ export function isolatedEnvironment(base) {
   for (const name of ['SystemRoot', 'WINDIR', 'COMSPEC', 'PATH', 'PATHEXT', 'PROCESSOR_ARCHITECTURE', 'NUMBER_OF_PROCESSORS']) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
   }
+  // A public relay is a local setting, never a source default: hand it to the owned Host only.
+  if (process.env.RR_PUBLIC_RELAY !== undefined) env.DSH_REMOTE_ROOM_RELAY = process.env.RR_PUBLIC_RELAY;
+  if (process.env.RR_RELAY_TOKEN !== undefined) env.DSH_REMOTE_ROOM_RELAY_TOKEN = process.env.RR_RELAY_TOKEN;
   return { ...env, PATH: [path.dirname(process.execPath), env.PATH ?? ''].join(path.delimiter),
     HOME: base, USERPROFILE: base, APPDATA: path.join(base, 'appdata'), LOCALAPPDATA: path.join(base, 'localappdata'),
     TEMP: path.join(base, 'tmp'), TMP: path.join(base, 'tmp'), DSH_HOME: path.join(base, 'home'), DSH_AGENTS_HOME: path.join(base, 'agents'),

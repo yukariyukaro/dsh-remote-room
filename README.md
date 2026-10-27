@@ -36,7 +36,7 @@ pnpm run check:package
 
 运行 DSH 插件管理器安装构建后的项目目录。插件使用 DSH 的 `fs`、`subprocess`、`tools`、`connection` 与 `storage` 服务，要求实际的 rc.3 `SandboxedFileSystem`。审计默认使用已有 `json` KV backend；没有该 backend 时应显式配置，不能悄悄退化为无审计。中继部署启用创建门禁时，在房主插件 Config 中设置 `relayCreateToken`，不要将它附加到邀请或分发给访客。
 
-选目录（原生选择器或手输绝对路径）、选权限、确认“谁能加入”（默认「跨网络」）、点「生成邀请」。跨网络时中继地址填一次即被记住，部署见 [docs/relay-deploy.md](docs/relay-deploy.md)；同一 Wi-Fi 场景切到「同一局域网」即可完全不经第三方。访客粘贴邀请、点「申请加入」，房主点「允许进入」。房间名自动等于共享目录名。
+选目录（原生选择器或手输绝对路径）、选权限、确认“谁能加入”（默认「跨网络」）、点「生成邀请」。跨网络需要一台中继，地址既不写死在代码里也不随包分发：用本地环境变量 `DSH_REMOTE_ROOM_RELAY` / `DSH_REMOTE_ROOM_RELAY_TOKEN` 提供（见 `.env.example`），或在界面里填一次由插件记住。同一 Wi-Fi 场景切到「同一局域网」即可完全不经第三方。访客粘贴邀请、点「申请加入」，房主点「允许进入」。房间名自动等于共享目录名。
 
 邀请包含高熵秘密，只交给受信任访客，不发布到日志、issue 或公开页面。生产地址必须 WSS；仅允许 literal loopback 与 RFC1918 私有地址使用纯 WS，因为中继只转发已由房间级 mTLS 密封的字节。
 

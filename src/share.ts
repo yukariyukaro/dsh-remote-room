@@ -65,9 +65,15 @@ async function resolveRelay(scope: ShareScope, requested: unknown, deps: ShareDe
     const endpoint = await deps.relays.endpoint('lan')
     return { relay: endpoint.url, createToken: endpoint.createToken }
   }
-  const candidate = text(requested ?? settings.relayUrl ?? deps.config.relayUrl ?? '', 'relay address', 2048).trim()
+  // An empty saved preference must not shadow the deployment default: only a real value wins.
+  // Precedence: explicit request, saved preference, local environment, plugin config.
+  const candidate = [requested, settings.relayUrl, process.env.DSH_REMOTE_ROOM_RELAY, deps.config.relayUrl]
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .map(value => value.trim())[0] ?? ''
   if (candidate === '') throw new RoomError('RELAY_REQUIRED', 'A public relay address is required for a cross-network share')
   const relay = validateRelay(candidate)
-  const createToken = settings.relayCreateToken || deps.config.relayCreateToken
+  const createToken = settings.relayCreateToken
+    || process.env.DSH_REMOTE_ROOM_RELAY_TOKEN
+    || deps.config.relayCreateToken
   return { relay, ...(createToken ? { createToken } : {}) }
 }

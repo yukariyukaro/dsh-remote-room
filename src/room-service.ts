@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { TLSSocket } from 'node:tls'
+import type { Duplex } from 'node:stream'
 import path from 'node:path'
 import type { Config } from './config.ts'
 import { createInvitation, parseInvitation, type Invitation } from './invite.ts'
@@ -181,14 +182,33 @@ export class RemoteRoomManager {
       if (!room.controller.signal.aborted) await this.end(room, 'failed', error instanceof Error ? error.message : 'Connection failed').catch(() => {})
     })
   }
+  /**
+   * A guest may reach a public relay before the host reservation exists, which the
+   * relay answers with 404. Retry that one race within the invitation window instead
+   * of failing a room the operator can still use.
+   */
+  private async openTransport(room: Room): Promise<Duplex> {
+    const role = room.snapshot.role
+    const deadline = Date.now() + Math.min(this.config.invitationTtlMs, 30_000)
+    for (;;) {
+      try {
+        return await connectRelay(room.invitation.relay, room.snapshot.id, role, {
+          signal: room.controller.signal,
+          ...(role === 'host' ? { hostToken: randomBytes(32).toString('base64url'), ...(room.createToken ?? this.config.relayCreateToken ? { createToken: room.createToken ?? this.config.relayCreateToken } : {}) } : {}),
+          allowInsecureLoopback: true,
+          connectTimeoutMs: Math.min(this.config.invitationTtlMs, 120_000),
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const early = role === 'guest' && /Unexpected server response: 404/u.test(message)
+        if (!early || room.controller.signal.aborted || Date.now() >= deadline) throw error
+        await new Promise<void>(resolve => { const timer = setTimeout(resolve, 400); timer.unref() })
+      }
+    }
+  }
   private async connect(room: Room): Promise<void> {
     const role = room.snapshot.role
-    const transport = await connectRelay(room.invitation.relay, room.snapshot.id, role, {
-      signal: room.controller.signal,
-      ...(role === 'host' ? { hostToken: randomBytes(32).toString('base64url'), ...(room.createToken ?? this.config.relayCreateToken ? { createToken: room.createToken ?? this.config.relayCreateToken } : {}) } : {}),
-      allowInsecureLoopback: true,
-      connectTimeoutMs: Math.min(this.config.invitationTtlMs, 120_000),
-    })
+    const transport = await this.openTransport(room)
     this.update(room, { phase: 'authenticating' })
     const socket: TLSSocket = await authenticateChannel(transport, { role, roomId: room.snapshot.id, credential: room.invitation.credential, timeoutMs: this.config.invitationTtlMs, signal: room.controller.signal })
     if (room.controller.signal.aborted) { socket.destroy(); return }
