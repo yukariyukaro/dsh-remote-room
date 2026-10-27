@@ -1,13 +1,34 @@
 {
-  "name": "@local/dsh-remote-room",
-  "version": "0.3.10",
-  "private": true,
+  "name": "@yukariyukaro/dsh-remote-room",
+  "version": "0.4.0",
   "description": "Consent-based remote workspaces for DeepSeek Harness",
   "license": "MIT",
+  "author": "yukariyukaro",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yukariyukaro/dsh-remote-room.git",
+    "directory": "packages/dsh-remote-room"
+  },
+  "homepage": "https://github.com/yukariyukaro/dsh-remote-room#readme",
+  "bugs": {
+    "url": "https://github.com/yukariyukaro/dsh-remote-room/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "remote",
+    "workspace",
+    "share"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=24.9.0",
-    "dsh": ">=0.2.1-rc.3 <0.2.2"
+    "dsh": ">=0.2.1-rc.2 <0.2.2"
   },
   "main": "./lib/index.js",
   "exports": {
@@ -52,11 +73,11 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/dsh-fs": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-fs-sandbox": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.3"
+    "@deepseek-ai/dsh-fs": ">=0.2.1-rc.2 <0.2.2",
+    "@deepseek-ai/dsh-fs-sandbox": ">=0.2.1-rc.2 <0.2.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.2.2",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.2.2",
+    "@deepseek-ai/dsh-subprocess": ">=0.2.1-rc.2 <0.2.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",

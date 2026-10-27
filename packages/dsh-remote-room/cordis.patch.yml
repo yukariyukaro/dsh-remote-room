@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-remote-room
-      name: '@local/dsh-remote-room'
+      name: '@yukariyukaro/dsh-remote-room'
       # 公网中继不写进代码：由使用者本地环境变量 DSH_REMOTE_ROOM_RELAY /
       # DSH_REMOTE_ROOM_RELAY_TOKEN 提供，或在界面里填一次由插件记住。
       # 见 docs/relay-deploy.md 与 .env.example。
