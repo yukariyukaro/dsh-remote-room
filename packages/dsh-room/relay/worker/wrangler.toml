@@ -1,0 +1,18 @@
+name = "dsh-room-relay"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# One Durable Object per room; it holds the Host socket and all guest traffic for that room.
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+ROOM_NAME = "room"
+
+# Set the shared secret with:  wrangler secret put RELAY_SECRET
+# It must match relaySecret in the Host plugin config.

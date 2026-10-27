@@ -1,0 +1,78 @@
+{
+  "name": "dsh-room",
+  "version": "0.1.0",
+  "description": "Share the running DSH Web UI with trusted people over SSH, a private network, or a relay",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.1-rc.3 <0.3.0"
+  },
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib",
+    "relay",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.5",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.0",
+    "@types/ws": "^8.18.0",
+    "esbuild": "^0.25.0",
+    "tsdown": "^0.15.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4",
+    "react": "^18.3.1",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.3"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "remote",
+    "share",
+    "tunnel"
+  ],
+  "author": "J",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yukariyukaro/dsh-room.git"
+  },
+  "homepage": "https://github.com/yukariyukaro/dsh-room#readme",
+  "bugs": {
+    "url": "https://github.com/yukariyukaro/dsh-room/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
