@@ -2,11 +2,11 @@
 
 让访客使用自己的 agent、模型和 API key 操作房主授权的文件与可选进程，不向访客公开房主的 DSH Web。
 
-**当前为开发版，尚未完成完整交付验收。** 文件、八个显式远端工具、普通执行、真实 PTY、独立 sidebar/设置入口和远端预览均已实现。106 项回归（含 20 项客户端状态机单测）通过；`0.1.2` 已通过 Electron/BoringSSL carrier 下的已安装双 profile 文件、执行、真实 PTY 和撤权测试。真实 Web 双端 UI 已走通安装/启用、创建/加入、批准、会话右栏文件预览、**本地与同名远端文件共存**、撤权过期快照，以及第二个全权限房间的普通执行与真实 PTY（含 resize、显式 stdin 与确认终止）。packaged Desktop 已走通安装/启用、设置、原生 SSE 200，并与 Web 双向跑通跨载体创建/批准/预览/撤权——包括 Desktop 作访客时在原生侧栏打开远端文件。点击测试发现并修复了 SSE GET 注册导致的状态不刷新（`0.1.4`）与连接状态失真（`0.1.5`）两处缺陷。Desktop ↔ Desktop、原生侧执行面板、Quit 菜单点击与持久化重启仍未覆盖，不能把局部成功称为完整 UI 验收。精确证据见 [开发状态](docs/development-status.md)。
+**0.3 已实现一键共享**：选目录、选权限、点「生成邀请」即可得到邀请，无需填写中继地址或根目录；房间名等于目录名，界面全中文。133 项回归（15 files）通过；`0.3.0` 在 DSH 0.2.1-rc.4 上通过真实 Web 旅程（`--mode journey --visual`，`dsh-room-ui-web-8CCvLE`）与真实 Plugins UI 安装（`--mode install`，`dsh-room-ui-web-RkI4hA`）。packaged Desktop 与 Web 的跨载体金线仍停留在 0.1.7 证据（`K4UWCU` / `kCRLyL`），Desktop 上的原生目录选择器也只有代码接入点，尚未做真实点击验收；Desktop ↔ Desktop、原生侧执行面板、Quit 菜单点击与持久化重启同样未覆盖。精确证据见 [开发状态](docs/development-status.md)。
 
 ## 能力与权限
 
-- 两端各安装插件，通过两条出站 WSS 连接独立中继；房主不新增入站监听端口。
+两端各安装插件，通过两条出站 WebSocket 连接同一个中继；中继默认由插件在房主进程内按需启动（同机 loopback 或局域网地址），只有跨网络共享时才需要一台公网中继。房主不新增常驻入站服务。
 - 房主创建邀请，访客加入，TLS 身份认证后房主在本地 UI 批准一次。授权有期限，可随时撤销；创建与批准没有 agent 工具入口。
 - `read-only`：共享根内读取；`workspace-write`：共享根内读写；二者都拒绝任意命令。`danger-full-access` 才允许整机文件与进程能力，其范围包括房主账户的网络权限，不是 cwd 沙箱或系统提权。
 - 保留现有本地文件、命令工具和 `ctx.fs`，另加明确的 `remote_*` 工具。每次传入 room ID、epoch 和房主路径；断线、撤权、未知结果不会回落到访客机器，也不会自动重放写入或 stdin。
@@ -36,9 +36,11 @@ pnpm run check:package
 
 运行 DSH 插件管理器安装构建后的项目目录。插件使用 DSH 的 `fs`、`subprocess`、`tools`、`connection` 与 `storage` 服务，要求实际的 rc.3 `SandboxedFileSystem`。审计默认使用已有 `json` KV backend；没有该 backend 时应显式配置，不能悄悄退化为无审计。中继部署启用创建门禁时，在房主插件 Config 中设置 `relayCreateToken`，不要将它附加到邀请或分发给访客。
 
-两端打开设置 → 远程工作区。房主填写 WSS 中继 URL、绝对共享目录与权限，创建邀请；访客粘贴邀请；房主核对待批准连接并确认。邀请包含高熵秘密，只交给受信任访客，不发布到日志、issue 或公开页面。生产地址必须 WSS；测试仅允许 literal loopback 的 WS。
+选目录（原生选择器或手输绝对路径）、选权限、点「生成邀请」，就是一键共享：权限默认“可读可写”，可达范围默认“仅本机”，邀请地址由插件自动生成。访客粘贴邀请、点「申请加入」，房主点「允许进入」。房间名自动等于共享目录名。跨网络共享时把“谁能加入”切到“公网”，填一次中继地址即可被记住；部署见 [docs/relay-deploy.md](docs/relay-deploy.md)。
 
-中继是独立部署单元，参见 [relay/README.md](relay/README.md)。Node relay 有真实网络测试；Cloudflare Worker + SQLite DO 仍是候选实现，尚未完成实际部署、休眠与压力验证，不应把本地结构恢复测试视为生产认证。
+邀请包含高熵秘密，只交给受信任访客，不发布到日志、issue 或公开页面。生产地址必须 WSS；仅允许 literal loopback 与 RFC1918 私有地址使用纯 WS，因为中继只转发已由房间级 mTLS 密封的字节。
+
+中继是独立部署单元，参见 [relay/README.md](relay/README.md)。同机与局域网场景由插件内嵌的 Node 中继承担，无需任何外部服务；跨网络场景可使用仓库内的 Cloudflare Worker + SQLite Durable Object 实现（部署步骤见 [docs/relay-deploy.md](docs/relay-deploy.md)），或任意自托管实例。Worker 实现尚未完成真实部署、休眠与压力验证，不应把本地结构恢复测试视为生产认证。
 
 ## 模块
 

@@ -39,11 +39,15 @@
 | Web Host ↔ Desktop Guest | PASS，exit0 | 反向配对：Web 作主机创建/批准/撤权，原生 Desktop 作访客完成安装、加入，并在 New Session 侧栏真实打开远端 `shared.txt` 预览到精确种子，撤权后 stale 且 Reload 禁用（`dsh-room-desktop-report-kCRLyL`） |
 | build / check:package / pack | PASS | `0.2.0`：类型检查、导出与 Client 语法校验通过；106/106 回归；真实 Web 金线 exit0 |
 
-当前交付 artifact：`artifacts/local-dsh-remote-room-0.2.0.tgz`，SHA-256 `e325e5c8908799431051dfa59b6ecc04c0457553e3f8ef9a29cca30eb95e9ec0`。该包在 **DSH 0.2.1-rc.4** 上通过完整 Web 金线（两端都走真实 Plugins UI 安装 → 启用 → 创建邀请 → 加入 → 批准 → 远端预览 → 本地/同名远端共存 → 撤权，`--mode full --visual`，`dsh-room-ui-web-r1FZG7`，exit0）；同一包的前置 `--mode journey`（CLI 预置 profile，只跑产品 UI，`dsh-room-ui-web-5A2NTW`）与 `--mode install`（干净 home 单端点真实安装，`dsh-room-ui-web-dNKuEB`）亦 exit0。回归 `vitest run` 仍为 106/106。
+当前交付 artifact：`artifacts/local-dsh-remote-room-0.3.0.tgz`，SHA-256 `112e80443b6c3a1ee3039dbbb395a0abc5818520fc7c880a2e2012038de49c95`。该包在 **DSH 0.2.1-rc.4** 上通过 0.3 的真实 Web 证据：`--mode journey --visual`（两端 CLI 预置 profile，只跑产品 UI，`dsh-room-ui-web-8CCvLE`，exit0）与 `--mode install`（干净 home 单端点，真实 Plugins Add → Install → Enable now → 远程房间设置空态，`dsh-room-ui-web-RkI4hA`，exit0）。回归 `vitest run` 为 133/133（15 files）。
 
-0.2.0 相比 0.1.7 的变化：远端预览正文改用 DSH 共享渲染组件（`MarkdownText` / `CodeBlock`，来自平台模块 `@deepseek-ai/dsh-client-ui-primitives`），预览容器重做（相对路径头部、类型标签、骨架加载、过期横幅、按类型留白）；E2E 拆成 `install` / `journey` / `full` 三种模式。
+0.3.0 相比 0.2.0 的变化：**一键共享**。共享不再要求填写中继地址、根目录或权限下拉——选择目录（原生选择器或手输绝对路径）、选权限、点「生成邀请」即得邀请；「谁能加入」默认“仅本机”，由插件在房主进程内按需启动内置中继并自动写入邀请；房间名自动等于共享目录名并在授权握手中同步给访客；界面改为三段式（共享首页 / 邀请与批准 / 已连接工作台）且**全中文**；目录选择经 `uiWorkspace.pickDirectory()`，手输路径作为回退。真实旅程断言：邀请 URL 中的 relay 必须是 `ws://127.0.0.1:<端口>`、房名必须等于目录名、面板不得出现英文 UI 词汇。
 
-**仍以 0.1.7 证据为准的部分**：Desktop Host ↔ Web Guest（`dsh-room-desktop-report-K4UWCU`）与 Web Host ↔ Desktop Guest（`dsh-room-desktop-report-kCRLyL`）两向跨载体金线，以及 0.1.7 的 exec/PTY 记录 —— 这些运行发生在 0.2.0 的预览改动之前，尚未在 0.2.0 上复跑。`0.1.7` 的 tarball 与证据保留，但交付版本以 `0.2.0` 为准。
+P3 的调整：公网能力保留但**降级为可选**——「公网」档在界面填一次地址即被记住，`relay/` 仍提供可部署的 Cloudflare Worker/Durable Object 实现与 `docs/relay-deploy.md`，但不再把“每个房主都要有 Cloudflare 账号”当作前置条件；同机与局域网场景完全不依赖任何外部服务。
+
+**仍以 0.1.7 证据为准的部分**：Desktop Host ↔ Web Guest（`dsh-room-desktop-report-K4UWCU`）与 Web Host ↔ Desktop Guest（`dsh-room-desktop-report-kCRLyL`）两向跨载体金线，以及 0.1.7 的 exec/PTY 记录 —— 这些运行发生在 0.3.0 的共享与界面改动之前，尚未在 0.3.0 上复跑。Desktop 上的原生目录选择器同样只有代码接入点，未做真实点击验收。`0.1.7` 的 tarball 与证据保留，但交付版本以 `0.3.0` 为准。
+
+0.2.0 记录保留：`artifacts/local-dsh-remote-room-0.2.0.tgz`，SHA-256 `e325e5c8908799431051dfa59b6ecc04c0457553e3f8ef9a29cca30eb95e9ec0`，完整 Web 金线 `dsh-room-ui-web-r1FZG7`，当时回归 106/106。
 
 0.1.2 验收 artifact SHA256：`36a24181a7378670a9340794b6ccca88f36858ad0e0eb415a3cf59aaf806d5fe`。后续源码或文档改动需重新构建/打包并记录新 hash，不能把这次 hash 当作任意新包的证据。
 
