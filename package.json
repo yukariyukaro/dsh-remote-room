@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-remote-room",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Consent-based remote workspaces for DeepSeek Harness",
   "license": "MIT",

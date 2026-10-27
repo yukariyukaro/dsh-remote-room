@@ -16,7 +16,7 @@ import { parseFileAddress } from './contracts.ts'
 import type { ClientSnapshot } from './state.ts'
 import type { Translate } from './locale.ts'
 import { failureOf } from './bridge.ts'
-import { ErrorNotice } from './RoomPanel.tsx'
+import { ErrorNotice } from './ui.tsx'
 import { styles } from './styles.ts'
 export interface PreviewProps {
   t: Translate

@@ -12,7 +12,7 @@ const names = {
   install: /^(Install|安装)$/u,
   enable: /^(Enable now|立即启用)$/u,
   settings: /^(Settings|设置)$/u,
-  remote: /^(Remote room|远程协助)$/u,
+  remote: /^(Remote room|远程房间)$/u,
 };
 
 export async function maskedScreenshot(page, file) {
@@ -52,9 +52,16 @@ function settingsDialog(page) {
 }
 
 export async function openRemoteSettings(page) {
+  const dialog = settingsDialog(page);
+  const panel = dialog.locator('.rr');
+  // The runner already opens this surface once per endpoint; reuse it instead of clicking through a modal mask.
+  const open = panel.locator('.rr-stage').first();
+  if (await open.count() && await open.isVisible().catch(() => false)) return panel;
   await page.getByRole('button', { name: /^(Account menu|账号菜单)$/u, exact: true }).click();
   await page.getByRole('menuitem', { name: names.settings, exact: true }).click();
   await settingsDialog(page).getByRole('button', { name: names.remote, exact: true }).click();
+  await settingsDialog(page).locator('.rr-stage').waitFor({ timeout: 30_000 });
+  return settingsDialog(page).locator('.rr');
 }
 
 async function openWorkbench(endpoint) {
@@ -67,8 +74,9 @@ async function openWorkbench(endpoint) {
   // New Session starts collapsed; wait for its real toggle rather than a racy isVisible probe.
   await page.getByRole('button', { name: /^(Open right sidebar|展开右侧栏)$/u }).click();
   await page.locator('[data-sidebar-right-guide-entry="remote-room"]').click();
-  await page.locator('[data-rightbar-col]').getByRole('heading', { name: names.remote, exact: true }).waitFor();
-  return page.locator('[data-rightbar-col]');
+  const pane = page.locator('[data-rightbar-col]');
+  await pane.locator('.rr-stage').waitFor({ timeout: 30_000 });
+  return pane;
 }
 
 async function capturePalettes(endpoint, preview, { evidence, results }) {
@@ -122,16 +130,6 @@ async function openLocalCopy(guest) {
 
 export async function businessJourney(endpoints, { root, evidence, report, results, secrets, resources, visual, processes, coexist = true, shot = maskedScreenshot }) {
   const [host, guest] = endpoints;
-  // The loopback relay is a transport fixture, not a replacement Harness launcher.
-  const { build } = await import('esbuild');
-  const relayModule = path.join(root, 'relay.mjs');
-  const repo = fileURLToPath(new URL('../../', import.meta.url));
-  await build({ entryPoints: [path.join(repo, 'relay/src/server.ts')], outfile: relayModule, bundle: true, platform: 'node', target: 'node24', format: 'esm', packages: 'external' });
-  const wsEntry = fileURLToPath(import.meta.resolve('ws'));
-  const source = await readFile(relayModule, 'utf8');
-  await writeFile(relayModule, source.replaceAll('from "ws"', `from ${JSON.stringify(pathToFileURL(wsEntry).href)}`));
-  const { startRelay } = await import(pathToFileURL(relayModule).href);
-  const relay = await startRelay({ host: '127.0.0.1', port: 0 }); resources.push(() => relay.close());
   const seed = 'remote-ui-golden-seed-2026\n';
   const shared = path.join(host.base, 'workspace');
   await writeFile(path.join(shared, 'shared.txt'), seed);
@@ -155,55 +153,61 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   ].join('\n'));
   await mkdir(path.join(shared, 'media'), { recursive: true });
   await writeFile(path.join(shared, 'media', 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'));
-  const hostSettings = settingsDialog(host.page);
-  await hostSettings.getByLabel(/^(Relay URL|中继地址)$/u).fill(relay.url);
-  await hostSettings.getByLabel(/^(Shared root|共享根目录)$/u).fill(shared);
-  await hostSettings.getByRole('combobox').selectOption('read-only');
-  await hostSettings.getByRole('button', { name: /^(Create invitation|创建邀请)/u }).click();
-  const inviteField = hostSettings.locator('textarea[readonly]');
+
+  // One click surface: choose the directory, keep the default "same machine" reach, share.
+  const hostPanel = await openRemoteSettings(host.page);
+  // A fresh home has no remembered directory, so the manual field is already the visible entry.
+  const pathInput = hostPanel.locator('input.rr-input').first();
+  if (!await pathInput.isVisible().catch(() => false)) await hostPanel.getByRole('button', { name: /^(直接输入路径)$/u }).click();
+  await pathInput.fill(shared);
+  await hostPanel.getByRole('radio', { name: /^(只读)$/u }).click();
+  await shot(host.page, path.join(evidence, 'host-share-home.png'));
+  await hostPanel.getByRole('button', { name: /^(生成邀请)$/u }).click();
+  const inviteField = hostPanel.locator('textarea[readonly]');
   await until(async () => await inviteField.count() && await inviteField.inputValue(), 'host invitation UI');
   const invitation = await inviteField.inputValue(); secrets.add(invitation);
-  await hostSettings.locator('.rr-room').first().locator('.rr-badge[data-state="authenticating"]').waitFor({ timeout: 30_000 });
-  results.stages.push('host: UI Create invitation; relay registration visible'); report('host: created invitation through form (value retained in memory only)');
-  const guestSettings = settingsDialog(guest.page);
-  await guestSettings.getByLabel(/^(Invitation|邀请内容)$/u).fill(invitation);
-  await guestSettings.getByRole('button', { name: /^(Request access|申请访问)$/u }).click();
-  const hostRoom = hostSettings.locator('.rr-room').first();
-  const guestRoom = guestSettings.locator('.rr-room').first();
-  await hostRoom.locator('.rr-badge[data-state="pending"]').waitFor({ timeout: 40_000 });
-  await guestRoom.locator('.rr-badge[data-state="pending"]').waitFor({ timeout: 40_000 });
-  if (await hostRoom.locator('.rr-roomhead').getAttribute('aria-expanded') === 'false') await hostRoom.locator('.rr-roomhead').click();
-  if (await guestRoom.locator('.rr-roomhead').getAttribute('aria-expanded') === 'false') await guestRoom.locator('.rr-roomhead').click();
-  assert.equal(await guestRoom.locator('.rr-tree').count(), 0, 'Pending guest must not render the host file tree');
-  await shot(host.page, path.join(evidence, 'host-pending.png'));
+  assert.match(invitation, /^dsh-room:\/\/join\/v2#/u, 'One-click share must produce a v2 invitation');
+  assert.match(invitation, /relay=ws%3A%2F%2F127\.0\.0\.1%3A\d+/u, 'The default reach must be a loopback relay, not a configured URL');
+  const roomTitle = await hostPanel.locator('.rr-herotext h1').innerText();
+  assert.equal(roomTitle, path.basename(shared), 'Room name must be the shared directory name');
+  results.stages.push(`host: one click shared ${path.basename(shared)} over a loopback relay (invitation retained in memory only)`);
+  report('host: created an invitation with no relay/URL typing; room name equals the directory name');
+
+  // Guest: paste the invitation, request access.
+  const guestPanel = await openRemoteSettings(guest.page);
+  await guestPanel.getByRole('button', { name: /^(加入)$/u }).click();
+  await guestPanel.locator('textarea').first().fill(invitation);
+  await guestPanel.getByRole('button', { name: /^(申请加入)$/u }).click();
+
+  // Host: the guest arrives as a decision card, not a silent connection.
+  await hostPanel.getByText(/^(有人请求进入)$/u).waitFor({ timeout: 40_000 });
+  assert.equal(await guestPanel.locator('.rr-tree').count(), 0, 'Pending guest must not render the host file tree');
+  await shot(host.page, path.join(evidence, 'host-approval-request.png'));
   await shot(guest.page, path.join(evidence, 'guest-pending.png'));
-  results.stages.push('guest: UI Request access; both pending; no shared.txt before approval');
-  await hostRoom.getByRole('button', { name: /^(Approve connection|批准此连接)$/u }).click();
-  await guestRoom.locator('.rr-badge[data-state="authorized"]').waitFor({ timeout: 30_000 });
-  await hostRoom.locator('.rr-badge[data-state="authorized"]').waitFor({ timeout: 30_000 });
-  await guestRoom.getByRole('button', { name: /shared\.txt/u }).waitFor();
-  results.stages.push('host: UI Approve connection; guest Authorized and shared.txt listed');
-  // Report any current artifact alert; do not fix application source from this runner.
-  const alerts = await guestRoom.getByRole('alert').allTextContents();
+  results.stages.push('host: guest arrival rendered as an approval card; guest pending shows no file tree');
+  await hostPanel.getByRole('button', { name: /^(允许进入)$/u }).click();
+
+  // Guest: authorized, files listed.
+  const guestWorkbench = await openWorkbench(guest);
+  const tree = guestWorkbench.locator('.rr-tree');
+  await tree.getByRole('button', { name: /shared\.txt/u }).waitFor({ timeout: 30_000 });
+  results.stages.push('host: UI 允许进入; guest authorized and sees shared.txt');
+  const alerts = await guestWorkbench.getByRole('alert').allTextContents();
   if (alerts.length) results.businessAlerts = alerts;
   assert.deepEqual(alerts, [], 'Authorized guest must not retain operation errors');
-  await shot(guest.page, path.join(evidence, 'guest-authorized-settings.png'));
-  const workbench = await openWorkbench(guest);
-  const workRoom = workbench.locator('.rr-room').first();
-  await workRoom.locator('.rr-badge[data-state="authorized"]').waitFor();
-  if (await workRoom.locator('.rr-roomhead').getAttribute('aria-expanded') === 'false') await workRoom.locator('.rr-roomhead').click();
-  await workRoom.getByRole('button', { name: /shared\.txt/u }).click();
+  await tree.getByRole('button', { name: /shared\.txt/u }).click();
   const preview = guest.page.locator('.rr-preview').filter({ hasText: 'shared.txt' });
   // The body is DSH's own code renderer; assert its text, not a private `<pre>` of ours.
   const remoteBody = preview.locator('[data-rr-renderer="code"]');
   await remoteBody.waitFor();
   await until(async () => (await remoteBody.innerText()).includes('remote-ui-golden-seed-2026'), 'remote seed in the shared code renderer');
   await shot(guest.page, path.join(evidence, 'guest-file-preview.png'));
-  results.stages.push('guest: real New Session / right workbench file click; remote source seed visibly previewed');
+  results.stages.push('guest: workbench file click; remote source seed visibly previewed');
   report('guest: shared.txt opened and exact seed visible in remote preview');
+
   // Markdown goes through the same shared renderer: real typography, a GFM table,
   // a highlighted fence, and a relative image fetched from the Host.
-  await workRoom.getByRole('button', { name: /guide\.md/u }).click();
+  await tree.getByRole('button', { name: /guide\.md/u }).click();
   const markdownPreview = guest.page.locator('.rr-preview').filter({ hasText: 'guide.md' });
   await markdownPreview.locator('[data-rr-renderer="markdown"]').waitFor();
   const document = markdownPreview.locator('.rr-document');
@@ -215,6 +219,7 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await shot(guest.page, path.join(evidence, 'guest-markdown-preview.png'));
   results.stages.push('guest: Markdown rendered by the shared DSH renderer (heading, GFM table, highlighted fence, Host-relative image)');
   report('guest: guide.md rendered as Markdown with table, code and remote image');
+
   // Reactivate the source tab through its real chip: a backgrounded tab stays mounted but hidden.
   await guest.page.locator('[data-dockkit-tab]').filter({ hasText: 'shared.txt' }).first().click();
   await remoteBody.waitFor();
@@ -231,30 +236,29 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
     report('guest: local shared.txt preview coexists with the remote preview; no seed cross-contamination');
   }
   if (visual) await capturePalettes(guest, preview, { evidence, results });
-  // First cancel, then accept only the expected confirm. No catch-all dialog auto-approval.
-  const revoke = hostRoom.getByRole('button', { name: /^(Revoke access|撤销访问)$/u });
-  const canceled = host.page.waitForEvent('dialog'); const cancelClick = revoke.click();
-  const cancelDialog = await canceled; assert.equal(cancelDialog.type(), 'confirm'); assert(/^(Revoke access to this room\?|撤销此房间的访问权限？)$/u.test(cancelDialog.message())); await cancelDialog.dismiss(); await cancelClick;
-  await hostRoom.locator('.rr-badge[data-state="authorized"]').waitFor();
-  const accepted = host.page.waitForEvent('dialog'); const confirmClick = revoke.click();
-  const dialog = await accepted; assert.equal(dialog.type(), 'confirm'); assert(/^(Revoke access to this room\?|撤销此房间的访问权限？)$/u.test(dialog.message())); await dialog.accept(); await confirmClick;
-  await hostRoom.locator('.rr-badge[data-state="closed"]').waitFor({ timeout: 30_000 });
-  // Bring the remote tab to the front: the local tab opened last owns the pane.
+
+  // The copy journey also proves the share panel is Chinese-only: no English UI vocabulary.
+  // Previews render owner data (paths, room ids, language chips) and are excluded here.
+  const panelText = await guestWorkbench.locator('.rr').first().innerText();
+  for (const word of ['Share', 'Join', 'Invitation', 'Permission', 'Relay', 'Approve', 'Revoke', 'Copy', 'Settings', 'Room ', 'Workspace', 'Read only']) {
+    assert.equal(panelText.includes(word), false, `The share panel must not show English copy: ${word}`);
+  }
+
+  // End the share from the host; the guest keeps a labeled stale snapshot.
+  await hostPanel.getByRole('button', { name: /^(结束共享)$/u }).click();
   await guest.page.locator('[data-dockkit-tab]').filter({ hasText: 'shared.txt' }).first().click();
-  await preview.getByRole('status').filter({ hasText: /Remote identity changed or access ended|远端身份已变更或访问已结束/u }).waitFor({ timeout: 30_000 });
-  assert.equal(await preview.getByRole('button', { name: /^(Reload file|重新读取文件)$/u }).isDisabled(), true, 'Revoked preview must disable reload');
-  // The guest's own file is untouched by revoking the room. Bring its tab forward:
-  // the two same-named chips keep DOM order, so the local one is the last.
+  await preview.getByRole('status').filter({ hasText: /远端身份已变更或访问已结束/u }).waitFor({ timeout: 30_000 });
+  assert.equal(await preview.getByRole('button', { name: /^(重新读取|Reload file)$/u }).isDisabled(), true, 'Revoked preview must disable reload');
   if (localFile) {
     await guest.page.locator('[data-dockkit-tab]').filter({ hasText: 'shared.txt' }).last().click();
     assert.equal(await localFile.localBody.getAttribute('data-textpreview-state'), 'text', 'Local preview must stay readable after revoke');
     assert.equal(await localFile.localBody.getByText('guest-local-seed-2026').count(), 1, 'Local preview keeps its own bytes after revoke');
   }
   await shot(guest.page, path.join(evidence, 'guest-revoked-preview.png'));
-  results.stages.push('host: Revoke confirm canceled then accepted; guest retained snapshot labeled stale and Reload file disabled');
-  report('PASS UI create/join/approve/remote file preview/revoke (read-only, no model call or UI editing)');
+  results.stages.push('host: 结束共享; guest retained snapshot labeled stale and reload disabled');
+  report('PASS UI 一键共享/加入/允许/远端预览/结束共享 (read-only, no model call or UI editing)');
   if (processes) {
     const { processJourney } = await import('./web-process.mjs');
-    await processJourney(endpoints, { evidence, report, results, relay: relay.url, shared });
+    await processJourney(endpoints, { evidence, report, results, relay: null, shared });
   }
 }

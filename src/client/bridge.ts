@@ -24,6 +24,8 @@ export function createBridge(baseUrl: string = document.baseURI): RemoteRoomApi 
     create: (input, signal) => call('create', input, signal),
     join: (invitation, signal) => call('join', { invitation }, signal),
     approve: id => call('approve', { id }), revoke: id => call('revoke', { id }), close: id => call('close', { id }),
+    settings: signal => call('settings', {}, signal),
+    updateSettings: (patch, signal) => call('settings.update', patch, signal),
     list: (ref, signal) => call('list', { id: ref.roomId, epoch: ref.epoch, path: ref.path }, signal),
     readText: (ref, signal) => call('readText', { id: ref.roomId, epoch: ref.epoch, path: ref.path }, signal),
     readBytes: (ref, signal) => call('readBytes', { id: ref.roomId, epoch: ref.epoch, path: ref.path, maxBytes: 8 * 1024 * 1024 }, signal),

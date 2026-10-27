@@ -16,8 +16,13 @@ export interface RemoteFileRef { roomId: string; epoch: string; path: string }
 export interface DirectoryEntry { name: string; type: 'file' | 'directory' | 'other'; target: { targetKey: string; displayPath: string }; version?: string; size?: number }
 export interface TextFile { text: string; version?: string }
 export interface FileBytes { base64: string; mediaType: string }
-export interface CreateRequest { relay: string; root: string; mode: RoomMode }
+/** Reach of a share; it decides which relay an invitation names. */
+export type ShareScope = 'local' | 'lan' | 'public'
+export interface CreateRequest { root: string; mode: RoomMode; scope: ShareScope; relay?: string }
 export interface CreateResult { room: RoomSnapshot; invitation: string }
+/** Owner-visible preferences; the relay secret is reported as a boolean, never as a value. */
+export interface ShareSettingsView { version: 1; scope: ShareScope; relayUrl: string; lastRoot: string; hasRelayCreateToken: boolean }
+export interface SettingsPatch { scope?: ShareScope; relayUrl?: string; lastRoot?: string; relayCreateToken?: string }
 export interface RemoteRoomApi {
   state(signal?: AbortSignal): Promise<RoomState>
   create(input: CreateRequest, signal?: AbortSignal): Promise<CreateResult>
@@ -25,6 +30,8 @@ export interface RemoteRoomApi {
   approve(id: string): Promise<RoomSnapshot>
   revoke(id: string): Promise<RoomSnapshot>
   close(id: string): Promise<RoomSnapshot>
+  settings(signal?: AbortSignal): Promise<ShareSettingsView>
+  updateSettings(patch: SettingsPatch, signal?: AbortSignal): Promise<ShareSettingsView>
   list(ref: RemoteFileRef, signal?: AbortSignal): Promise<DirectoryEntry[]>
   readText(ref: RemoteFileRef, signal?: AbortSignal): Promise<TextFile>
   readBytes(ref: RemoteFileRef, signal?: AbortSignal): Promise<FileBytes>

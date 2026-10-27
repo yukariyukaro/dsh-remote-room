@@ -127,8 +127,8 @@ try {
     await dismissFreshWebWelcome(page);
     if (uiInstall) await installAndEnable(endpoint, ownedPackage, { report, evidence, results });
     await openRemoteSettings(page);
-    await page.getByRole('heading', { name: /^(Remote room|远程协助)$/u, exact: true }).waitFor();
-    await page.getByText(/^(No remote connection yet|尚无远程连接)$/u).waitFor();
+    await page.getByRole('heading', { name: /^(共享你的工作区)$/u, exact: true }).waitFor();
+    await page.getByText(/^(共享目录)$/u).waitFor();
     if (options.mode !== 'install') {
       await until(() => results.eventStreamResponses?.find(item => item.endpoint === endpoint.label && item.status === 200 && item.contentType?.startsWith('text/event-stream')), `${endpoint.label} real SSE HTTP 200`, 15_000);
       assert.equal(results.eventStreamResponses.filter(item => item.endpoint === endpoint.label && item.status >= 400).length, 0, 'Remote room event stream must not fail');

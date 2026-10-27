@@ -6,12 +6,13 @@ import type { ClientSnapshot } from './state.ts'
 import { RoomPanel } from './RoomPanel.tsx'
 import { Preview } from './Preview.tsx'
 import { DOCUMENT_KIND, PROTOCOL, ROOM_KIND, parseFileAddress } from './contracts.ts'
-import { en, zh } from './locale.ts'
+import { en, zh, translator } from './locale.ts'
 import type { Translate } from './locale.ts'
 
 /** Structural loading contract; feature packages are never runtime-imported. */
 interface ClientContext {
   effect(effect: () => (() => void) | void, label?: string): unknown
+  get(name: string): unknown
   locale: { register(namespace: string, dictionaries: object): () => void; bind(namespace: string): Translate }
   sidebarRightTabs: { register(definition: { id: string; kind: string; keepMounted?: boolean; patterns?: string[]; priority?: 'extension'; canOpen?: (address: string) => boolean; title: (address: string) => string; guide?: { id: string; order: number; title: () => string; description: () => string }[] }): () => void }
   slots: { inject(name: string, factory: () => (() => void)): () => void; register<P>(options: object, component: ComponentType<P>): () => void }
@@ -29,9 +30,15 @@ function titleOf(address: string): string {
 export function apply(ctx: ClientContext): void {
   const api = createBridge()
   const client = createRoomClient(api)
-  const t = ctx.locale.bind('remoteRoom')
+  const t = translator(zh)
+  // Optional service: a client without ui-workspace keeps the manual path entry instead of failing.
+  const get = (ctx as { get?: (name: string) => unknown }).get
+  const workspace = typeof get === 'function' ? get.call(ctx, 'uiWorkspace') as { pickDirectory?(): Promise<string | null> } | undefined : undefined
+  const pickDirectory = typeof workspace?.pickDirectory === 'function' ? () => workspace.pickDirectory!() : undefined
   const face = {
     api,
+    t,
+    pickDirectory,
     mutate: <T,>(operation: Promise<T>) => client.changed(operation),
     refresh: () => client.refresh(),
     hooks: { roomState: client.source },
@@ -41,7 +48,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.sidebarRightTabs.register({ id: ROOM_ID, kind: ROOM_KIND, keepMounted: true, title: () => t('title'), guide: [{ id: 'connect', order: 45, title: () => t('title'), description: () => t('guide') }] }), 'remote-room: workbench type')
   ctx.effect(() => ctx.sidebarRightTabs.register({ id: DOCUMENT_ID, kind: DOCUMENT_KIND, keepMounted: true, patterns: ['dsh-resource://remote-room-file/**'], priority: 'extension', canOpen: address => parseFileAddress(address) !== undefined, title: titleOf }), 'remote-room: remote document type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: ROOM_ID, locale: 'remoteRoom', inject: () => face }, RoomPanel)), 'remote-room: workbench body')
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: DOCUMENT_ID, locale: 'remoteRoom', inject: () => ({ api, hooks: { roomState: client.source } }) }, Preview)), 'remote-room: document body')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: DOCUMENT_ID, locale: 'remoteRoom', inject: () => ({ api, t, hooks: { roomState: client.source } }) }, Preview)), 'remote-room: document body')
   // A root settings entry works without a mounted conversation. Remote files remain disabled here.
   ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({ name: 'settings.section', id: 'dsh-remote-room', order: 45, label: () => t('title'), locale: 'remoteRoom', inject: () => ({ ...face, canOpenFiles: false }) }, RoomPanel)), 'remote-room: settings entry')
   ctx.effect(() => ctx.resources.register({
