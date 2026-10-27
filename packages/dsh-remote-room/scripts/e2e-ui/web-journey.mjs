@@ -161,10 +161,10 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await mkdir(path.join(shared, 'media'), { recursive: true });
   await writeFile(path.join(shared, 'media', 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'));
 
-  // Zero input: the deployment relay must already be prefilled, so sharing needs no URL typing.
+  // Zero input: a configured relay shows as a compact summary row, never as an empty field.
   const hostPanel = await openRemoteSettings(host.page);
-  const relayField = hostPanel.getByPlaceholder(/wss:\/\//u);
-  assert.equal(await relayField.inputValue(), relayUrl, 'The public relay must be prefilled from the deployment config');
+  const relaySummary = hostPanel.locator('.rr-summary-value');
+  assert.equal(await relaySummary.innerText(), new URL(relayUrl).host, 'The public relay must be configured from the deployment environment');
   const pathInput = hostPanel.getByPlaceholder(/例如/u);
   if (!await pathInput.isVisible().catch(() => false)) await hostPanel.getByRole('button', { name: /^(直接输入路径)$/u }).click();
   await pathInput.fill(shared);
@@ -178,6 +178,11 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   assert.ok(invitation.includes(`relay=${encodeURIComponent(relayUrl)}`), 'The invitation must carry the deployment relay');
   const roomTitle = await hostPanel.locator('.rr-herotext h1').innerText();
   assert.equal(roomTitle, path.basename(shared), 'Room name must be the shared directory name');
+  // The invitation states its own remaining life instead of a static "a few minutes".
+  const countdown = hostPanel.locator('.rr-countdown');
+  await countdown.waitFor({ timeout: 10_000 });
+  assert.match(await countdown.innerText(), /^(剩余 )?\d+:\d\d$/u, 'The invitation must show a live countdown');
+  await shot(host.page, path.join(evidence, 'host-waiting.png'));
   results.stages.push(`host: shared ${path.basename(shared)} with the prefilled public relay (invitation retained in memory only)`);
   report('host: created an invitation through the public relay; room name equals the directory name');
 

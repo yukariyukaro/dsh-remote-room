@@ -8,6 +8,25 @@ DSH_REMOTE_ROOM_RELAY=wss://<你的实例>.workers.dev
 DSH_REMOTE_ROOM_RELAY_TOKEN=<部署时写入的 CREATE_TOKEN>
 ```
 
+## 用真实公网链路验证
+
+部署完成后，一条命令就能证明"两端经这个 wss 端点配对、完成 mTLS 握手并授权一次调用"：
+
+```powershell
+cd packages/dsh-remote-room
+npm run test:public-relay
+```
+
+它读取 `RR_PUBLIC_RELAY` / `RR_RELAY_TOKEN`（名字也接受 `DSH_REMOTE_ROOM_RELAY` / `DSH_REMOTE_ROOM_RELAY_TOKEN`），并会自动加载包内 `.env`。三项都缺时该用例**自我跳过**，不会假装通过。
+
+完整 UI 旅程（两个真实 DSH 实例走过安装/共享/加入/批准/预览/结束共享）同样走这个公网端点：
+
+```powershell
+$env:RR_PUBLIC_RELAY='wss://<你的实例>.workers.dev'
+$env:RR_RELAY_TOKEN='<门闩>'
+node scripts/e2e-ui-web.mjs --mode journey --package artifacts/<包>.tgz --sha256 <摘要> --visual
+```
+
 优先级：界面里保存过的值 > 环境变量 > 插件 Config。界面填一次会记住，之后无需再填。只想在同一 Wi-Fi 内共享时，把“谁能加入”切到「同一局域网」，插件会在房主进程内按需启动内置中继，不经过任何第三方。
 
 ## 为什么需要

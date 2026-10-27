@@ -30,6 +30,9 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
   const [joining, setJoining] = useState(false)
   const [invitation, setInvitation] = useState('')
   const [picking, setPicking] = useState(false)
+  const [editingRelay, setEditingRelay] = useState(relay === '')
+  // The host is enough to recognise a deployment; the full URL stays behind the edit affordance.
+  const relayHost = ((): string => { try { return new URL(relay).host } catch { return relay } })()
 
   const choose = (): void => {
     if (!pickDirectory) { setManual(true); return }
@@ -86,13 +89,20 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
         </div>
         <Callout tone="neutral">{scopeHint}</Callout>
         {scope === 'public'
-          ? <Field label={t('relayLabel')} hint={relayMissing ? t('relayMissingHint') : t('relayHint')}>
-            <div className="rr-inline">
-              <input className="rr-input rr-mono" value={relay} placeholder={t('relayPlaceholder')} spellCheck={false} autoComplete="off"
-                onChange={event => setRelay(event.target.value)} onBlur={() => onSettings({ relayUrl: relay.trim() })} />
-              <button type="button" className="rr-btn" onClick={() => onSettings({ relayUrl: relay.trim() })}>{t('saveRelay')}</button>
+          ? relay !== '' && !editingRelay
+            ? <div className="rr-summary">
+              <IconGlobeOutlineRegular size={14} />
+              <span className="rr-summary-label">{t('relayLabel')}</span>
+              <code className="rr-summary-value" title={relay}>{relayHost}</code>
+              <button type="button" className="rr-link" onClick={() => setEditingRelay(true)}>{t('change')}</button>
             </div>
-          </Field>
+            : <Field label={t('relayLabel')} hint={relayMissing ? t('relayMissingHint') : t('relayHint')}>
+              <div className="rr-inline">
+                <input className="rr-input rr-mono" value={relay} placeholder={t('relayPlaceholder')} spellCheck={false} autoComplete="off"
+                  aria-label={t('relayLabel')} onChange={event => setRelay(event.target.value)} onBlur={() => onSettings({ relayUrl: relay.trim() })} />
+                <button type="button" className="rr-btn" onClick={() => { onSettings({ relayUrl: relay.trim() }); setEditingRelay(false) }}>{t('saveRelay')}</button>
+              </div>
+            </Field>
           : null}
       </Card>
 

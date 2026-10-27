@@ -86,6 +86,7 @@ export class RemoteRoomManager {
     const snapshot: RoomSnapshot = {
       id: invitation.roomId, role: 'host', phase: 'connecting', epoch: randomUUID(),
       root, mode, name: text(input.name, 'room name', 200), ...(input.scope ? { relayKind: input.scope } : {}),
+      invitationExpiresAt: Date.now() + this.config.invitationTtlMs,
     }
     const room: Room = {
       snapshot, invitation, controller: new AbortController(), backend: this.createBackend(snapshot.id),

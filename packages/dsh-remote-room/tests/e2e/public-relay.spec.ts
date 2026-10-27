@@ -1,9 +1,12 @@
 /**
- * Verifies a deployed public relay. Skipped unless both RR_PUBLIC_RELAY and
- * RR_RELAY_TOKEN are set, because the deployment address and its creation gate
- * belong to whoever operates the relay.
+ * Verifies a deployed public relay over its real wss endpoint. Skipped unless a
+ * relay address and creation token are available, because the deployment belongs
+ * to whoever operates the relay. Both names work: RR_PUBLIC_RELAY/RR_RELAY_TOKEN
+ * for the test run, DSH_REMOTE_ROOM_RELAY/DSH_REMOTE_ROOM_RELAY_TOKEN for the
+ * plugin itself, and a local `.env` is loaded when present.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -14,8 +17,11 @@ import { DEFAULT_SETTINGS, type ShareSettings } from '../../src/host/settings.ts
 import { validateRelay } from '../../src/invite.ts'
 import { RoomError, type Json } from '../../src/protocol.ts'
 
-const relay = process.env.RR_PUBLIC_RELAY ?? ''
-const token = process.env.RR_RELAY_TOKEN ?? ''
+// A checked-out repository may carry a local .env; the test never writes one.
+try { process.loadEnvFile(fileURLToPath(new URL('../../.env', import.meta.url))) } catch { /* .env is optional */ }
+
+const relay = process.env.RR_PUBLIC_RELAY ?? process.env.DSH_REMOTE_ROOM_RELAY ?? ''
+const token = process.env.RR_RELAY_TOKEN ?? process.env.DSH_REMOTE_ROOM_RELAY_TOKEN ?? ''
 const config = Config({})
 
 function settings(): { current(): ShareSettings; update(patch: Partial<Omit<ShareSettings, 'version'>>): Promise<ShareSettings> } {

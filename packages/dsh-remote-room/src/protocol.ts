@@ -18,6 +18,8 @@ export interface RoomSnapshot {
   relayKind?: 'local' | 'lan' | 'public'
   root?: string
   mode?: RoomMode
+  /** When the host must approve before the invitation stops being usable. */
+  invitationExpiresAt?: number
   expiresAt?: number
   error?: string
 }
