@@ -1,8 +1,12 @@
 import { build as tsdown } from 'tsdown'
 import { build as esbuild } from 'esbuild'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+// The dynamic-module loader keys the client row by package name; a renamed package must
+// register under its published name or the shell reports "loaded without registering".
+const { name } = JSON.parse(await readFile('package.json', 'utf8'))
 
 await tsdown({
   entry: { index: 'src/index.ts' },
@@ -22,7 +26,7 @@ const browser = await esbuild({
 const source = browser.outputFiles[0]?.text
 if (!source) throw new Error('Client build produced no JavaScript')
 await mkdir('lib', { recursive: true })
-await writeFile('lib/client.js', `window.__ModuleLoader__.load({id:'@local/dsh-remote-room',factory(require){const module={exports:{}};const exports=module.exports;\n${source}\nreturn module.exports;}});\n`)
+await writeFile('lib/client.js', `window.__ModuleLoader__.load({id:${JSON.stringify(name)},factory(require){const module={exports:{}};const exports=module.exports;\n${source}\nreturn module.exports;}});\n`)
 
 // The local relay ships beside the Host entry so a share needs no second process or install step.
 // Its own sources keep NodeNext `.js` specifiers, so TypeScript files are resolved explicitly here.
