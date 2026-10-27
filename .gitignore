@@ -9,9 +9,19 @@ Thumbs.db
 *.log
 
 # 本机运行时启动垫片（含本机绝对路径，见 scripts/e2e-ui/README 说明）
-scripts/e2e-ui/tools/
+**/scripts/e2e-ui/tools/
 
 # 只读参考仓库：浅克隆，不进版本库（见 reference/README.md）
-/reference/deepseek-harness/
-/reference/open-remote-ssh/
-/reference/shellhub/
+**/reference/deepseek-harness/
+**/reference/open-remote-ssh/
+**/reference/shellhub/
+
+# 本机运行态与打包产物（嵌套包同样适用）
+.env
+.dsh-*
+.wrangler-tool/
+.workbuddy/
+.firecrawl/
+*.tgz
+pnpm-debug.log*
+

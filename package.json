@@ -1,0 +1,22 @@
+{
+  "name": "dsh-room-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Two installable DSH sharing modes: dsh-room (whole UI) and @local/dsh-remote-room (one workspace)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "build": "npm --prefix packages/dsh-remote-room run build && npm --prefix packages/dsh-room run build",
+    "typecheck": "npm --prefix packages/dsh-remote-room run typecheck && npm --prefix packages/dsh-room run typecheck",
+    "test": "npm --prefix packages/dsh-remote-room run test && npm --prefix packages/dsh-room run test",
+    "build:remote-room": "npm --prefix packages/dsh-remote-room run build",
+    "build:room": "npm --prefix packages/dsh-room run build",
+    "typecheck:remote-room": "npm --prefix packages/dsh-remote-room run typecheck",
+    "typecheck:room": "npm --prefix packages/dsh-room run typecheck",
+    "test:remote-room": "npm --prefix packages/dsh-remote-room run test",
+    "test:room": "npm --prefix packages/dsh-room run test",
+    "check:package": "npm --prefix packages/dsh-remote-room run check:package"
+  }
+}
