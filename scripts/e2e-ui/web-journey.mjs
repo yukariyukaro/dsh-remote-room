@@ -130,6 +130,16 @@ async function openLocalCopy(guest) {
 
 export async function businessJourney(endpoints, { root, evidence, report, results, secrets, resources, visual, processes, coexist = true, shot = maskedScreenshot }) {
   const [host, guest] = endpoints;
+  // A relay is a transport fixture here: sharing targets separate networks by default.
+  const { build } = await import('esbuild');
+  const relayModule = path.join(root, 'relay.mjs');
+  const repo = fileURLToPath(new URL('../../', import.meta.url));
+  await build({ entryPoints: [path.join(repo, 'relay/src/server.ts')], outfile: relayModule, bundle: true, platform: 'node', target: 'node24', format: 'esm', packages: 'external' });
+  const wsEntry = fileURLToPath(import.meta.resolve('ws'));
+  const source = await readFile(relayModule, 'utf8');
+  await writeFile(relayModule, source.replaceAll('from "ws"', `from ${JSON.stringify(pathToFileURL(wsEntry).href)}`));
+  const { startRelay } = await import(pathToFileURL(relayModule).href);
+  const relay = await startRelay({ host: '127.0.0.1', port: 0 }); resources.push(() => relay.close());
   const seed = 'remote-ui-golden-seed-2026\n';
   const shared = path.join(host.base, 'workspace');
   await writeFile(path.join(shared, 'shared.txt'), seed);
@@ -154,10 +164,10 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await mkdir(path.join(shared, 'media'), { recursive: true });
   await writeFile(path.join(shared, 'media', 'pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64'));
 
-  // One click surface: choose the directory, keep the default "same machine" reach, share.
+  // Default reach is cross-network: fill the relay once, then the directory, then share.
   const hostPanel = await openRemoteSettings(host.page);
-  // A fresh home has no remembered directory, so the manual field is already the visible entry.
-  const pathInput = hostPanel.locator('input.rr-input').first();
+  await hostPanel.getByPlaceholder(/wss:\/\//u).fill(relay.url.replace(/^ws:/u, 'ws:'));
+  const pathInput = hostPanel.getByPlaceholder(/例如/u);
   if (!await pathInput.isVisible().catch(() => false)) await hostPanel.getByRole('button', { name: /^(直接输入路径)$/u }).click();
   await pathInput.fill(shared);
   await hostPanel.getByRole('radio', { name: /^(只读)$/u }).click();
@@ -167,11 +177,11 @@ export async function businessJourney(endpoints, { root, evidence, report, resul
   await until(async () => await inviteField.count() && await inviteField.inputValue(), 'host invitation UI');
   const invitation = await inviteField.inputValue(); secrets.add(invitation);
   assert.match(invitation, /^dsh-room:\/\/join\/v2#/u, 'One-click share must produce a v2 invitation');
-  assert.match(invitation, /relay=ws%3A%2F%2F127\.0\.0\.1%3A\d+/u, 'The default reach must be a loopback relay, not a configured URL');
+  assert.match(invitation, /relay=ws%3A%2F%2F127\.0\.0\.1%3A\d+/u, 'The invitation must carry the configured public relay');
   const roomTitle = await hostPanel.locator('.rr-herotext h1').innerText();
   assert.equal(roomTitle, path.basename(shared), 'Room name must be the shared directory name');
-  results.stages.push(`host: one click shared ${path.basename(shared)} over a loopback relay (invitation retained in memory only)`);
-  report('host: created an invitation with no relay/URL typing; room name equals the directory name');
+  results.stages.push(`host: shared ${path.basename(shared)} over a relay typed once (invitation retained in memory only)`);
+  report('host: created an invitation; room name equals the directory name');
 
   // Guest: paste the invitation, request access.
   const guestPanel = await openRemoteSettings(guest.page);

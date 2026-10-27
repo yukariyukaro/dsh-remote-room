@@ -1,10 +1,10 @@
 /** Durable sharing preferences. No invitation secret is ever stored here. */
 import { RoomError } from '../protocol.ts'
 
-/** Where the relay for a new room comes from. */
-export type ShareScope = 'local' | 'lan' | 'public'
+/** Where the relay for a new room comes from. Sharing is for separate networks by default. */
+export type ShareScope = 'lan' | 'public'
 
-export const SHARE_SCOPES: readonly ShareScope[] = ['local', 'lan', 'public']
+export const SHARE_SCOPES: readonly ShareScope[] = ['public', 'lan']
 
 export interface ShareSettings {
   version: 1
@@ -24,11 +24,11 @@ export interface SettingsUnit {
 }
 
 export const DEFAULT_SETTINGS: ShareSettings = {
-  version: 1, scope: 'local', relayUrl: '', relayCreateToken: '', lastRoot: '',
+  version: 1, scope: 'public', relayUrl: '', relayCreateToken: '', lastRoot: '',
 }
 
 export function shareScope(value: unknown): ShareScope {
-  if (value !== 'local' && value !== 'lan' && value !== 'public') throw new RoomError('INVALID_SCOPE', 'Unknown sharing reach')
+  if (value !== 'lan' && value !== 'public') throw new RoomError('INVALID_SCOPE', 'Unknown sharing reach')
   return value
 }
 
@@ -38,7 +38,7 @@ export function readSettings(value: unknown): ShareSettings {
   const record = value as Record<string, unknown>
   const read = (key: keyof ShareSettings, max: number): string =>
     typeof record[key] === 'string' ? (record[key] as string).slice(0, max) : ''
-  const scope = record.scope === 'local' || record.scope === 'lan' || record.scope === 'public' ? record.scope : DEFAULT_SETTINGS.scope
+  const scope: ShareScope = record.scope === 'lan' || record.scope === 'public' ? record.scope : DEFAULT_SETTINGS.scope
   return {
     version: 1,
     scope,

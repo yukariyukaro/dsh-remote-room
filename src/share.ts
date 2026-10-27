@@ -61,13 +61,13 @@ export async function resolveShare(input: ShareInput, deps: ShareDeps): Promise<
 interface RelayChoice { relay: string; createToken?: string }
 
 async function resolveRelay(scope: ShareScope, requested: unknown, deps: ShareDeps, settings: ShareSettings): Promise<RelayChoice> {
-  if (scope === 'public') {
-    const candidate = text(requested ?? settings.relayUrl ?? deps.config.relayUrl ?? '', 'relay address', 2048).trim()
-    if (candidate === '') throw new RoomError('RELAY_REQUIRED', 'A public relay address is required for a cross-network share')
-    const relay = validateRelay(candidate)
-    const createToken = settings.relayCreateToken || deps.config.relayCreateToken
-    return { relay, ...(createToken ? { createToken } : {}) }
+  if (scope === 'lan') {
+    const endpoint = await deps.relays.endpoint('lan')
+    return { relay: endpoint.url, createToken: endpoint.createToken }
   }
-  const endpoint = await deps.relays.endpoint(scope)
-  return { relay: endpoint.url, createToken: endpoint.createToken }
+  const candidate = text(requested ?? settings.relayUrl ?? deps.config.relayUrl ?? '', 'relay address', 2048).trim()
+  if (candidate === '') throw new RoomError('RELAY_REQUIRED', 'A public relay address is required for a cross-network share')
+  const relay = validateRelay(candidate)
+  const createToken = settings.relayCreateToken || deps.config.relayCreateToken
+  return { relay, ...(createToken ? { createToken } : {}) }
 }

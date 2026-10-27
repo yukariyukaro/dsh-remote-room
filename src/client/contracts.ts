@@ -16,12 +16,12 @@ export interface RemoteFileRef { roomId: string; epoch: string; path: string }
 export interface DirectoryEntry { name: string; type: 'file' | 'directory' | 'other'; target: { targetKey: string; displayPath: string }; version?: string; size?: number }
 export interface TextFile { text: string; version?: string }
 export interface FileBytes { base64: string; mediaType: string }
-/** Reach of a share; it decides which relay an invitation names. */
-export type ShareScope = 'local' | 'lan' | 'public'
+/** Reach of a share; sharing targets separate networks by default. */
+export type ShareScope = 'lan' | 'public'
 export interface CreateRequest { root: string; mode: RoomMode; scope: ShareScope; relay?: string }
 export interface CreateResult { room: RoomSnapshot; invitation: string }
 /** Owner-visible preferences; the relay secret is reported as a boolean, never as a value. */
-export interface ShareSettingsView { version: 1; scope: ShareScope; relayUrl: string; lastRoot: string; hasRelayCreateToken: boolean }
+export interface ShareSettingsView { version: 1; scope: ShareScope; relayUrl: string; lastRoot: string; hasRelayCreateToken: boolean; defaultRelay: string }
 export interface SettingsPatch { scope?: ShareScope; relayUrl?: string; lastRoot?: string; relayCreateToken?: string }
 export interface RemoteRoomApi {
   state(signal?: AbortSignal): Promise<RoomState>

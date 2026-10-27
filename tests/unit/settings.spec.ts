@@ -14,7 +14,7 @@ describe('sharing settings durability', () => {
   it('starts from documented defaults when nothing was stored', async () => {
     const store = await ShareSettingsStore.open(new FakeUnit(undefined))
     expect(store.current()).toEqual(DEFAULT_SETTINGS)
-    expect(store.current().scope).toBe('local')
+    expect(store.current().scope).toBe('public')
   })
 
   it('rejects records that are not the stored shape and keeps valid fields', async () => {

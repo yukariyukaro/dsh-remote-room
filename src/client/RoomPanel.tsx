@@ -54,7 +54,10 @@ export function RoomPanel(props: RoomPanelProps): JSX.Element {
   }
 
   let body: JSX.Element
-  if (!room) {
+  if (!room && settings === undefined) {
+    // Preferences carry the remembered relay and directory; render once, not twice with a stale first pass.
+    body = <div className="rr-stage"><p className="rr-hint">{t('loading')}</p></div>
+  } else if (!room) {
     body = <ShareHome t={t} initialRoot={settings?.lastRoot || cwd || ''} settings={settings} busy={busy}
       pickDirectory={props.pickDirectory} onSettings={save}
       onCreate={input => run(async () => { const result = await mutate(api.create(input)); setInvitation(result.invitation) })}

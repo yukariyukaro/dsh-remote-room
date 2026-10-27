@@ -8,7 +8,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 const MODES: readonly RoomMode[] = ['read-only', 'workspace-write', 'danger-full-access']
-const SCOPES: readonly ShareScope[] = ['local', 'lan', 'public']
+const SCOPES: readonly ShareScope[] = ['public', 'lan']
 
 export interface ShareHomeProps {
   t: Translate
@@ -24,8 +24,8 @@ export interface ShareHomeProps {
 export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCreate, onJoin, onSettings }: ShareHomeProps): JSX.Element {
   const [root, setRoot] = useState(initialRoot)
   const [mode, setMode] = useState<RoomMode>('workspace-write')
-  const [scope, setScope] = useState<ShareScope>(settings?.scope ?? 'local')
-  const [relay, setRelay] = useState(settings?.relayUrl ?? '')
+  const [scope, setScope] = useState<ShareScope>(settings?.scope ?? 'public')
+  const [relay, setRelay] = useState(settings?.relayUrl || settings?.defaultRelay || '')
   const [manual, setManual] = useState(initialRoot === '')
   const [joining, setJoining] = useState(false)
   const [invitation, setInvitation] = useState('')
@@ -37,7 +37,8 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
     void pickDirectory().then(found => { if (found) { setRoot(found); onSettings({ lastRoot: found }) } }, () => setManual(true)).finally(() => setPicking(false))
   }
   const hint = mode === 'read-only' ? t('readOnlyHint') : mode === 'workspace-write' ? t('workspaceWriteHint') : t('fullAccessHint')
-  const scopeHint = scope === 'local' ? t('scopeHintLocal') : scope === 'lan' ? t('scopeHintLan') : t('scopeHintPublic')
+  const scopeHint = scope === 'lan' ? t('scopeHintLan') : t('scopeHintPublic')
+  const relayMissing = scope === 'public' && relay.trim() === ''
 
   return (
     <div className="rr-stage">
@@ -79,13 +80,13 @@ export function ShareHome({ t, initialRoot, settings, busy, pickDirectory, onCre
           {SCOPES.map(value => (
             <button key={value} type="button" role="radio" aria-checked={scope === value} className="rr-option"
               data-active={scope === value} onClick={() => { setScope(value); onSettings({ scope: value }) }}>
-              {value === 'local' ? t('scopeLocal') : value === 'lan' ? t('scopeLan') : t('scopePublic')}
+              {value === 'lan' ? t('scopeLan') : t('scopePublic')}
             </button>
           ))}
         </div>
         <Callout tone="neutral">{scopeHint}</Callout>
         {scope === 'public'
-          ? <Field label={t('relayLabel')} hint={t('relayHint')}>
+          ? <Field label={t('relayLabel')} hint={relayMissing ? t('relayMissingHint') : t('relayHint')}>
             <div className="rr-inline">
               <input className="rr-input rr-mono" value={relay} placeholder={t('relayPlaceholder')} spellCheck={false} autoComplete="off"
                 onChange={event => setRelay(event.target.value)} onBlur={() => onSettings({ relayUrl: relay.trim() })} />

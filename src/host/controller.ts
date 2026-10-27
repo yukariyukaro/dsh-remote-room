@@ -16,6 +16,8 @@ export interface ShareBridge {
   create(input: ShareInput): Promise<CreateInput>
   settings(): ShareSettings
   update(patch: Record<string, unknown>): Promise<ShareSettings>
+  /** Relay baked into the deployment, offered before the owner saves one of their own. */
+  defaultRelay(): string
 }
 
 /** Same-process UI bridge; this API is never exposed through the guest room channel. */
@@ -52,8 +54,8 @@ export class RoomController {
       let value: Json
       if (action === 'state') value = json(this.manager.state())
       else if (action === 'create') value = json(await this.manager.create(await this.share.create(input)))
-      else if (action === 'settings') value = json(redact(this.share.settings()))
-      else if (action === 'settings.update') value = json(redact(await this.share.update(patchOf(input))))
+      else if (action === 'settings') value = json(redact(this.share.settings(), this.share.defaultRelay()))
+      else if (action === 'settings.update') value = json(redact(await this.share.update(patchOf(input)), this.share.defaultRelay()))
       else if (action === 'join') value = json(await this.manager.join(text(input.invitation, 'invitation', 8192)))
       else {
         const id = text(input.id, 'room id', 128)
@@ -139,7 +141,7 @@ async function readBody(request: Request, maxBytes: number): Promise<string> {
 }
 
 /** The owner browser learns whether a relay secret exists, never the secret itself. */
-function redact(settings: ShareSettings): Json {
+function redact(settings: ShareSettings, defaultRelay: string): Json {
   return {
     version: settings.version,
     scope: settings.scope,
@@ -147,6 +149,7 @@ function redact(settings: ShareSettings): Json {
     lastRoot: settings.lastRoot,
     relayCreateToken: '',
     hasRelayCreateToken: settings.relayCreateToken !== '',
+    defaultRelay,
   }
 }
 

@@ -22,10 +22,11 @@ function setup() {
     } },
   }
   const manager = new RemoteRoomManager(Config({}), () => { throw new Error('No test backend') })
-  const settings = { version: 1 as const, scope: 'local' as const, relayUrl: '', relayCreateToken: '', lastRoot: '' }
+  const settings = { version: 1 as const, scope: 'public' as const, relayUrl: '', relayCreateToken: '', lastRoot: '' }
   const controller = new RoomController(manager, connection, 1024, {
     create: async () => { throw new Error('No test sharing') },
     settings: () => settings,
+    defaultRelay: () => '',
     update: async () => { throw new Error('No test settings write') },
   })
   controller.mount()

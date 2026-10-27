@@ -36,15 +36,15 @@ function harness(options: { settings?: Partial<ShareSettings>; directory?: boole
 }
 
 describe('one-click share resolution', () => {
-  it('shares the remembered directory over a loopback relay with workspace write access', async () => {
-    const h = harness({ settings: { lastRoot: ROOT } })
+  it('shares the remembered directory over the remembered public relay with workspace write access', async () => {
+    const h = harness({ settings: { lastRoot: ROOT, relayUrl: 'wss://relay.example.com' } })
     const target = await resolveShare({}, h.deps)
     expect(target).toEqual({
-      root: ROOT, name: 'project', mode: 'workspace-write', scope: 'local',
-      relay: 'ws://127.0.0.1:7777', createToken: 'local-token',
+      root: ROOT, name: 'project', mode: 'workspace-write', scope: 'public',
+      relay: 'wss://relay.example.com',
     })
-    expect(h.kinds).toEqual(['local'])
-    expect(h.writes[0]).toMatchObject({ scope: 'local', lastRoot: ROOT })
+    expect(h.kinds).toEqual([])
+    expect(h.writes[0]).toMatchObject({ scope: 'public', lastRoot: ROOT })
   })
 
   it('follows the remembered reach and uses the paired relay endpoint', async () => {
@@ -88,7 +88,7 @@ describe('one-click share resolution', () => {
   })
 
   it('still shares when the preference cannot be stored', async () => {
-    const h = harness({ settings: { lastRoot: ROOT }, writeFails: true })
+    const h = harness({ settings: { lastRoot: ROOT, relayUrl: 'wss://relay.example.com' }, writeFails: true })
     await expect(resolveShare({}, h.deps)).resolves.toMatchObject({ root: ROOT })
   })
 })
