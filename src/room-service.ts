@@ -29,10 +29,21 @@ export interface HostRoomBackend {
   revoke(reason: string): Promise<void>
 }
 export type BackendFactory = (roomId: string) => HostRoomBackend
+export interface CreateInput {
+  root: string
+  /** Display name; the sharing layer derives it from the directory. */
+  name: string
+  mode: RoomMode
+  relay: string
+  scope?: 'local' | 'lan' | 'public'
+  createToken?: string
+}
 interface Room {
   snapshot: RoomSnapshot
   invitation: Invitation
   controller: AbortController
+  /** Reservation gate for the relay instance that carries this room. */
+  createToken?: string
   rpc?: RpcPeer
   backend?: HostRoomBackend
   peerId?: string
@@ -60,7 +71,7 @@ export class RemoteRoomManager {
     return () => { this.followers.delete(listener) }
   }
 
-  async create(input: { relay: string; root: string; mode: RoomMode }): Promise<{ room: RoomSnapshot; invitation: string }> {
+  async create(input: CreateInput): Promise<{ room: RoomSnapshot; invitation: string }> {
     this.reserve()
     const root = text(input.root, 'shared root')
     if (!path.isAbsolute(root)) throw new RoomError('INVALID_ROOT', 'Choose an absolute shared directory')
@@ -71,8 +82,14 @@ export class RemoteRoomManager {
     finally { this.creating-- }
     if (this.disposed) throw new RoomError('DISPOSED', 'Remote room plugin was stopped while generating an invitation')
     const { invitation, url } = generated
-    const snapshot: RoomSnapshot = { id: invitation.roomId, role: 'host', phase: 'connecting', epoch: randomUUID(), root, mode }
-    const room: Room = { snapshot, invitation, controller: new AbortController(), backend: this.createBackend(snapshot.id) }
+    const snapshot: RoomSnapshot = {
+      id: invitation.roomId, role: 'host', phase: 'connecting', epoch: randomUUID(),
+      root, mode, name: text(input.name, 'room name', 200), ...(input.scope ? { relayKind: input.scope } : {}),
+    }
+    const room: Room = {
+      snapshot, invitation, controller: new AbortController(), backend: this.createBackend(snapshot.id),
+      ...(input.createToken ? { createToken: input.createToken } : {}),
+    }
     this.rooms.set(snapshot.id, room)
     this.start(room)
     return { room: { ...snapshot }, invitation: url }
@@ -104,7 +121,7 @@ export class RemoteRoomManager {
     clearTimeout(room.timer)
     room.timer = setTimeout(() => { void this.end(room, 'closed', 'Authorization expired').catch(() => {}) }, this.config.grantTtlMs)
     room.timer.unref()
-    try { await room.rpc.call('control.grant', json({ id, epoch: snapshot.epoch, root: snapshot.root, mode: snapshot.mode, expiresAt }), { signal: room.controller.signal }) }
+    try { await room.rpc.call('control.grant', json({ id, epoch: snapshot.epoch, root: snapshot.root, mode: snapshot.mode, name: snapshot.name, expiresAt }), { signal: room.controller.signal }) }
     catch (error) { await this.end(room, 'failed', 'Guest did not acknowledge authorization'); throw error }
     return { ...room.snapshot }
     } catch (error) {
@@ -168,7 +185,7 @@ export class RemoteRoomManager {
     const role = room.snapshot.role
     const transport = await connectRelay(room.invitation.relay, room.snapshot.id, role, {
       signal: room.controller.signal,
-      ...(role === 'host' ? { hostToken: randomBytes(32).toString('base64url'), ...(this.config.relayCreateToken ? { createToken: this.config.relayCreateToken } : {}) } : {}),
+      ...(role === 'host' ? { hostToken: randomBytes(32).toString('base64url'), ...(room.createToken ?? this.config.relayCreateToken ? { createToken: room.createToken ?? this.config.relayCreateToken } : {}) } : {}),
       allowInsecureLoopback: true,
       connectTimeoutMs: Math.min(this.config.invitationTtlMs, 120_000),
     })
@@ -197,7 +214,7 @@ export class RemoteRoomManager {
           const input = object(args)
           if (input.protocol !== 2) throw new RoomError('VERSION_MISMATCH', 'Unsupported remote room protocol')
           greeted = true
-          return json({ id: room.snapshot.id, epoch: room.snapshot.epoch, root: room.snapshot.root, mode: room.snapshot.mode })
+          return json({ id: room.snapshot.id, epoch: room.snapshot.epoch, root: room.snapshot.root, mode: room.snapshot.mode, name: room.snapshot.name })
         }
         if (method === 'control.ready') {
           if (!greeted || room.snapshot.phase !== 'authenticating') throw new RoomError('INVALID_STATE', 'Unexpected ready acknowledgement')
@@ -215,7 +232,7 @@ export class RemoteRoomManager {
         const input = object(args)
         if (input.id !== room.snapshot.id || input.epoch !== room.snapshot.epoch || room.snapshot.phase !== 'pending') throw new RoomError('INVALID_STATE', 'Unexpected authorization')
         const expiresAt = integer(input.expiresAt, 'expiry', Date.now() + 1, Date.now() + 86_400_000)
-        this.update(room, { phase: 'authorized', root: text(input.root, 'shared root'), mode: roomMode(input.mode), expiresAt })
+        this.update(room, { phase: 'authorized', root: text(input.root, 'shared root'), mode: roomMode(input.mode), expiresAt, ...(typeof input.name === 'string' ? { name: text(input.name, 'room name', 200) } : {}) })
         clearTimeout(room.timer)
         room.timer = setTimeout(() => { void this.end(room, 'closed', 'Authorization expired').catch(() => {}) }, Math.max(1, expiresAt - Date.now()))
         room.timer.unref()
@@ -223,7 +240,11 @@ export class RemoteRoomManager {
       })
       const hello = object(await rpc.call('control.hello', { protocol: 2 }, { signal: room.controller.signal }))
       if (hello.id !== room.snapshot.id) throw new RoomError('INVALID_STATE', 'Room identity mismatch')
-      this.update(room, { phase: 'pending', epoch: text(hello.epoch, 'connection epoch', 128), root: text(hello.root, 'shared root'), mode: roomMode(hello.mode) })
+      this.update(room, {
+        phase: 'pending', epoch: text(hello.epoch, 'connection epoch', 128),
+        root: text(hello.root, 'shared root'), mode: roomMode(hello.mode),
+        ...(typeof hello.name === 'string' ? { name: text(hello.name, 'room name', 200) } : {}),
+      })
       await rpc.call('control.ready', null, { signal: room.controller.signal })
     }
   }

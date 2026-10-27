@@ -1,6 +1,9 @@
-import type { RemoteRoomManager } from '../room-service.ts'
+import type { RemoteRoomManager, CreateInput } from '../room-service.ts'
+import type { ShareInput } from '../share.ts'
+import type { ShareSettings } from './settings.ts'
 import { PROCESS_METHODS } from './processes.ts'
-import { integer, json, object, RoomError, roomMode, text, type Json } from '../protocol.ts'
+import { integer, json, object, RoomError, text, type Json } from '../protocol.ts'
+import { shareScope } from './settings.ts'
 
 interface Connection {
   readonly browserPeer: { readonly id: string }
@@ -8,11 +11,23 @@ interface Connection {
   readonly fetch: { register(route: { path: string; methods: ('POST' | 'GET')[]; requestBody: 'buffered' | 'streaming'; fetch(request: Request): Promise<Response> }): () => Promise<void> }
 }
 
+/** Local sharing preferences as the owner UI sees them; the relay secret never crosses this seam. */
+export interface ShareBridge {
+  create(input: ShareInput): Promise<CreateInput>
+  settings(): ShareSettings
+  update(patch: Record<string, unknown>): Promise<ShareSettings>
+}
+
 /** Same-process UI bridge; this API is never exposed through the guest room channel. */
 export class RoomController {
   private readonly sinks = new Set<() => void>()
   private readonly disposers: (() => Promise<void>)[] = []
-  constructor(private readonly manager: RemoteRoomManager, private readonly connection: Connection, private readonly maxRequestBytes: number) {}
+  constructor(
+    private readonly manager: RemoteRoomManager,
+    private readonly connection: Connection,
+    private readonly maxRequestBytes: number,
+    private readonly share: ShareBridge,
+  ) {}
 
   mount(): void {
     this.disposers.push(this.connection.fetch.register({ path: '/api/remote-room', methods: ['POST'], requestBody: 'streaming', fetch: request => this.handle(request) }))
@@ -36,7 +51,9 @@ export class RoomController {
       const action = text(input.action, 'action', 64)
       let value: Json
       if (action === 'state') value = json(this.manager.state())
-      else if (action === 'create') value = json(await this.manager.create({ relay: text(input.relay, 'relay URL'), root: text(input.root, 'shared root'), mode: roomMode(input.mode) }))
+      else if (action === 'create') value = json(await this.manager.create(await this.share.create(input)))
+      else if (action === 'settings') value = json(redact(this.share.settings()))
+      else if (action === 'settings.update') value = json(redact(await this.share.update(patchOf(input))))
       else if (action === 'join') value = json(await this.manager.join(text(input.invitation, 'invitation', 8192)))
       else {
         const id = text(input.id, 'room id', 128)
@@ -119,4 +136,27 @@ async function readBody(request: Request, maxBytes: number): Promise<string> {
     }
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
   } finally { await reader.cancel(); reader.releaseLock() }
+}
+
+/** The owner browser learns whether a relay secret exists, never the secret itself. */
+function redact(settings: ShareSettings): Json {
+  return {
+    version: settings.version,
+    scope: settings.scope,
+    relayUrl: settings.relayUrl,
+    lastRoot: settings.lastRoot,
+    relayCreateToken: '',
+    hasRelayCreateToken: settings.relayCreateToken !== '',
+  }
+}
+
+/** Only known preference fields cross the bridge, and every value is validated before storage. */
+function patchOf(input: Record<string, unknown>): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (input.scope !== undefined) patch.scope = shareScope(input.scope)
+  if (input.relayUrl !== undefined) patch.relayUrl = text(input.relayUrl, 'relay address', 2048)
+  if (input.relayCreateToken !== undefined) patch.relayCreateToken = text(input.relayCreateToken, 'relay token', 512)
+  if (input.lastRoot !== undefined) patch.lastRoot = text(input.lastRoot, 'shared directory', 4096)
+  if (Object.keys(patch).length === 0) throw new RoomError('INVALID_INPUT', 'No sharing preference was provided')
+  return patch
 }

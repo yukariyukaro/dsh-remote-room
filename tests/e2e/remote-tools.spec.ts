@@ -80,7 +80,7 @@ describe('remote tools / real registry and two-end remote file capability', () =
     })
     guest = new RemoteRoomManager(config, () => { throw new Error('Guest must never instantiate host authority') })
     disposeTools = registerRemoteTools(guestCtx, guest)
-    const created = await host.create({ relay: relay.url, root, mode: 'workspace-write' })
+    const created = await host.create({ relay: relay.url, root, name: 'test', mode: 'workspace-write' })
     roomId = created.room.id
     await vi.waitFor(() => expect(host.state().rooms[0]?.phase, JSON.stringify(host.state())).toBe('authenticating'))
     await guest.join(created.invitation)
@@ -226,7 +226,7 @@ describe('remote tools / real registry and two-end remote file capability', () =
 
   it('lets the host enforce readonly permissions despite guest local full-access policy', async () => {
     await host.revoke(roomId)
-    const created = await host.create({ relay: relay.url, root, mode: 'read-only' })
+    const created = await host.create({ relay: relay.url, root, name: 'test', mode: 'read-only' })
     await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('authenticating'))
     await guest.join(created.invitation)
     await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === created.room.id)?.phase).toBe('pending'))

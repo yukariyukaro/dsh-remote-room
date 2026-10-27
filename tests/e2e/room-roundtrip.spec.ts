@@ -60,7 +60,7 @@ async function setup() {
 describe('two real room endpoints over a WebSocket relay / TLS PSK / RPC / DSH fs', () => {
   it('requires one host grant, reads/writes only on host, keeps roots fenced and revokes without fallback', async () => {
     const { root, outside, host, guest, relay, audit } = await setup()
-    const created = await host.create({ relay: relay.url, root, mode: 'workspace-write' })
+    const created = await host.create({ relay: relay.url, root, name: 'test', mode: 'workspace-write' })
     await waitFor(host, created.room.id, 'authenticating')
     await guest.join(created.invitation)
     await waitFor(host, created.room.id, 'pending')
@@ -88,8 +88,8 @@ describe('two real room endpoints over a WebSocket relay / TLS PSK / RPC / DSH f
     const { root, host, guest, relay } = await setup()
     const second = path.join(path.dirname(root), 'second-root'); await mkdir(second)
     await writeFile(path.join(second, 'remote.txt'), 'SECOND_HOST')
-    const first = await host.create({ relay: relay.url, root, mode: 'read-only' })
-    const other = await host.create({ relay: relay.url, root: second, mode: 'read-only' })
+    const first = await host.create({ relay: relay.url, root, name: 'first', mode: 'read-only' })
+    const other = await host.create({ relay: relay.url, root: second, name: 'second', mode: 'read-only' })
     await Promise.all([waitFor(host, first.room.id, 'authenticating'), waitFor(host, other.room.id, 'authenticating')])
     await guest.join(first.invitation); await guest.join(other.invitation)
     await Promise.all([waitFor(host, first.room.id, 'pending'), waitFor(host, other.room.id, 'pending')])

@@ -47,10 +47,27 @@ function decode(value: string, cap: number): Buffer {
   if (result.length > cap || result.toString('base64url') !== value) throw new Error('Non-canonical credential encoding')
   return result
 }
+/**
+ * Plain WS is allowed only where the relay cannot leave the local network: loopback and RFC1918.
+ * The relay forwards sealed TLS records, so its own transport carries no workspace content; what
+ * plaintext exposes is metadata (peer addresses, timing, sizes) on a network the operator owns.
+ */
+export function privateAddress(hostname: string): boolean {
+  if (hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1') return true
+  const octets = hostname.split('.')
+  if (octets.length !== 4 || octets.some(part => !/^\d{1,3}$/.test(part))) return false
+  const [a, b] = octets.map(Number) as [number, number, number, number]
+  if (a! > 255 || b! > 255) return false
+  if (a === 10) return true
+  if (a === 192 && b === 168) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  return false
+}
+
 export function validateRelay(value: string): string {
   let url: URL
   try { url = new URL(value) } catch { throw new RoomError('INVALID_RELAY', 'Invalid relay URL') }
-  const loopback = ['127.0.0.1', '[::1]'].includes(url.hostname)
-  if ((url.protocol !== 'wss:' && !(url.protocol === 'ws:' && loopback)) || url.username || url.password || url.hash || url.search) throw new RoomError('INVALID_RELAY', 'Use WSS (or literal loopback WS for local testing), without credentials or query')
+  const plaintext = url.protocol === 'ws:' && privateAddress(url.hostname)
+  if ((url.protocol !== 'wss:' && !plaintext) || url.username || url.password || url.hash || url.search) throw new RoomError('INVALID_RELAY', 'Use WSS, or WS only on a loopback or private-network address, without credentials or query')
   return url.toString().replace(/\/$/, '')
 }

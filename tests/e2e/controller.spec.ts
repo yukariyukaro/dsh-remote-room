@@ -22,7 +22,12 @@ function setup() {
     } },
   }
   const manager = new RemoteRoomManager(Config({}), () => { throw new Error('No test backend') })
-  const controller = new RoomController(manager, connection, 1024)
+  const settings = { version: 1 as const, scope: 'local' as const, relayUrl: '', relayCreateToken: '', lastRoot: '' }
+  const controller = new RoomController(manager, connection, 1024, {
+    create: async () => { throw new Error('No test sharing') },
+    settings: () => settings,
+    update: async () => { throw new Error('No test settings write') },
+  })
   controller.mount()
   cleanups.push(() => manager.dispose(), () => controller.dispose())
   const request = (body: object, cookie?: string) => new Request('http://127.0.0.1/api/remote-room', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) })

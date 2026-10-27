@@ -4,12 +4,15 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { Room, limits, parseRoute, validToken, type Limits } from './room.js';
 
 export interface StartRelayOptions extends Partial<Limits> {
-  host: '127.0.0.1' | '::1'; port: number;
+  host: '127.0.0.1' | '::1' | '0.0.0.0'; port: number;
+  /** Required to bind a network address: this relay carries sealed TLS records, never plaintext content. */
+  allowLan?: boolean;
   maxRooms?: number; maxCreatesPerMinute?: number; createToken?: string;
 }
 /** Local integration fixture/self-host backend. Terminate TLS at a trusted reverse proxy for production. */
 export async function startRelay(options: StartRelayOptions): Promise<{ url: string; close(): Promise<void> }> {
-  if (!['127.0.0.1', '::1'].includes(options.host)) throw new Error('Plain WS server must bind loopback');
+  const loopback = options.host === '127.0.0.1' || options.host === '::1';
+  if (!loopback && !(options.host === '0.0.0.0' && options.allowLan === true)) throw new Error('Plain WS server must bind loopback unless allowLan is set');
   const config = limits(options);
   const maxRooms = options.maxRooms ?? 256;
   const maxCreates = options.maxCreatesPerMinute ?? 32;

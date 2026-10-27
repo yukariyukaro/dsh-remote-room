@@ -12,6 +12,10 @@ export interface RoomSnapshot {
   role: RoomRole
   phase: RoomPhase
   epoch: string
+  /** Display name agreed by both ends; the shared directory's own name. */
+  name?: string
+  /** Reach of the relay, so the UI can explain who can join. */
+  relayKind?: 'local' | 'lan' | 'public'
   root?: string
   mode?: RoomMode
   expiresAt?: number

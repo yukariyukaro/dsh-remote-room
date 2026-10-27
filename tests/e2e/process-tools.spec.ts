@@ -150,7 +150,7 @@ describe('remote process tools / real registry and two-end Host subprocess', () 
     return { output, last }
   }
   async function connect(mode: RoomMode = 'danger-full-access') {
-    const created = await host.create({ relay: relay.url, root, mode })
+    const created = await host.create({ relay: relay.url, root, name: 'test', mode })
     roomId = created.room.id
     await vi.waitFor(() => expect(host.state().rooms.find(room => room.id === roomId)?.phase).toBe('authenticating'))
     await guest.join(created.invitation)
