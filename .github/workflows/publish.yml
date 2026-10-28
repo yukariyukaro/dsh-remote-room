@@ -21,10 +21,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11
+      # No registry-url here: it makes setup-node inject a placeholder
+      # NODE_AUTH_TOKEN, and npm then tries that token instead of exchanging the
+      # OIDC identity token for a short-lived publish credential.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - name: Install
         run: pnpm install --ignore-scripts --no-frozen-lockfile
       - name: Build
@@ -40,4 +42,6 @@ jobs:
           fi
       - name: Publish
         working-directory: packages/dsh-remote-room
-        run: npm publish --provenance --access public
+        run: |
+          npm --version
+          npm publish --registry=https://registry.npmjs.org/ --provenance --access public
