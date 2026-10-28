@@ -2,7 +2,7 @@
   "name": "dsh-room-monorepo",
   "version": "0.0.0",
   "private": true,
-  "description": "Two installable DSH sharing modes: dsh-room (whole UI) and @local/dsh-remote-room (one workspace)",
+  "description": "Two installable DSH sharing modes: dsh-room (whole UI) and @yukariyukaro/dsh-remote-room (one workspace)",
   "license": "MIT",
   "engines": {
     "node": ">=24.9.0"

@@ -1,0 +1,43 @@
+# Trusted publishing: npm trusts this repository + workflow file through OIDC,
+# so no long-lived token and no per-publish 2FA prompt is involved.
+# The npm side must list exactly: owner yukariyukaro, repository dsh-remote-room,
+# workflow publish.yml (package settings → Trusted Publisher).
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance and the OIDC token exchange
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Install
+        run: pnpm install --ignore-scripts --no-frozen-lockfile
+      - name: Build
+        run: pnpm --filter @yukariyukaro/dsh-remote-room run build
+      - name: Check the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: packages/dsh-remote-room
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package version v$version" >&2
+            exit 1
+          fi
+      - name: Publish
+        working-directory: packages/dsh-remote-room
+        run: npm publish --provenance --access public
