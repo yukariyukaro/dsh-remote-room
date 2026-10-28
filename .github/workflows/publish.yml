@@ -44,4 +44,7 @@ jobs:
         working-directory: packages/dsh-remote-room
         run: |
           npm --version
-          npm publish --registry=https://registry.npmjs.org/ --provenance --access public
+          # --provenance is omitted on purpose: npm only accepts a sigstore
+          # bundle whose source repository is public, and this repo is private.
+          # Flip the repo to public and add --provenance to turn it on.
+          npm publish --registry=https://registry.npmjs.org/ --access public
