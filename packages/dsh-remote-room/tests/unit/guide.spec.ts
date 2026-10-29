@@ -52,6 +52,8 @@ describe('remote_room_guide / shipped documentation locator', () => {
   it('keeps the guide aligned with the published package name and settings label', () => {
     const guide = readFileSync(join(import.meta.dirname, '..', '..', 'GUIDE.md'), 'utf8')
     expect(guide).toContain('@yukariyukaro/dsh-remote-room')
+    // The panel/tab is 「远程房间」; 「远程工作区」 is only the plugin-list name in locale/zh.json.
+    expect(guide).toContain('远程房间')
     expect(guide).toContain('远程工作区')
     expect(guide).toContain('docs/relay-deploy.md')
     expect(guide).toContain('src/host')
