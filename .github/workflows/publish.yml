@@ -2,16 +2,28 @@
 # so no long-lived token and no per-publish 2FA prompt is involved.
 # The npm side must list exactly: owner yukariyukaro, repository dsh-remote-room,
 # workflow publish.yml (package settings → Trusted Publisher).
+#
+# Release flow: bump packages/dsh-remote-room/package.json on main and merge.
+# That push publishes. A version already on the registry is a no-op, so repeated
+# pushes, re-runs and workflow_dispatch are safe.
 name: publish
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'packages/dsh-remote-room/**'
+      - '.github/workflows/publish.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write # required for npm provenance and the OIDC token exchange
+  contents: write # the lightweight release tag written after a successful publish
+  id-token: write # required for the OIDC token exchange
+
+# Two merges in quick succession must not race into the registry.
+concurrency:
+  group: publish-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -31,16 +43,28 @@ jobs:
         run: pnpm install --ignore-scripts --no-frozen-lockfile
       - name: Build
         run: pnpm --filter @yukariyukaro/dsh-remote-room run build
-      - name: Check the tag matches the package version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Verify the package
         working-directory: packages/dsh-remote-room
         run: |
+          pnpm run typecheck
+          pnpm run test:unit
+          pnpm run check:package
+      - name: Compare with the registry
+        id: registry
+        working-directory: packages/dsh-remote-room
+        run: |
+          name="$(node -p "require('./package.json').name")"
           version="$(node -p "require('./package.json').version")"
-          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
-            echo "tag ${GITHUB_REF_NAME} does not match package version v$version" >&2
-            exit 1
+          published="$(npm view "$name@$version" version 2>/dev/null || true)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$published" = "$version" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$name@$version is already on the registry; nothing to publish"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Publish
+        if: steps.registry.outputs.skip != 'true'
         working-directory: packages/dsh-remote-room
         run: |
           npm --version
@@ -48,3 +72,15 @@ jobs:
           # bundle whose source repository is public, and this repo is private.
           # Flip the repo to public and add --provenance to turn it on.
           npm publish --registry=https://registry.npmjs.org/ --access public
+      # The tag is a bookmark for humans and changelogs; publishing no longer
+      # depends on it, so a failed tag step never undoes a successful publish.
+      - name: Tag the published commit
+        if: steps.registry.outputs.skip != 'true'
+        run: |
+          tag="v${{ steps.registry.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::notice::$tag already exists"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi

@@ -233,3 +233,21 @@ pnpm run check:package # 导出、locale、客户端 bundle 语法、本指南�
 - 浏览器侧批准排除独立 API owner，但不是「真人证明」。
 - Cloudflare Worker 中继尚未完成真实部署与压力验证。
 - 桌面端原生目录选择器只有接入点，未做真实点击验收。
+- 跨网络分享需要「已经有人给你一个中继地址」。插件不自带公共中继，`relayUrl` 默认为空时「跨网络」这条路径走不通；同一个 Wi-Fi 用「同一局域网」不需要中继。
+- 桌面端在拿不到原生目录选择器时退回手填绝对路径，零基础用户容易卡在这一步。
+
+---
+
+## 12. 两端版本不一致会怎样
+
+**结论：插件版本可以不相等，协议版本才决定能不能互通。** 0.4.x 和 0.5.x 混用是安全的——0.5.0 只新增了一个本地只读工具（`remote_room_guide`）和随包文档/源码，协议层零改动。
+
+具体的三道闸门：
+
+1. **邀请自带版本号**：`dsh-room://join/v2`。解析时版本不对直接 `INVALID_INVITATION`（"Unsupported invitation version; create a new v2 invitation"），旧邀请不会被当成新协议硬用。
+2. **握手必须同协议号**：连接后第一步是 `control.hello`，邀请侧固定报 `protocol: 2`；房主侧不认就抛 `VERSION_MISMATCH`（"Unsupported remote room protocol"），房间进 `failed`，不会半连通地跑。
+3. **操作走白名单**：授权后房主只接受固定方法集合，未知操作返回 `METHOD_NOT_FOUND`；访客侧也只接受 `control.grant` / `control.ping`，房主无法反向调用访客的本地能力。
+
+**风险点（当前未覆盖）**：协议号相同但语义被改动的版本不会被拒绝，也没有「最低版本」通告——两侧都报 2 就会互通。所以跨版本混用只在「协议未变」时安全；升级时两端一起升，跨网络中继两侧尤其如此。
+
+排查版本问题：房主日志里的 `VERSION_MISMATCH` = 协议不认；访客侧的 `INVALID_INVITATION` = 邀请格式版本不认。两者都属硬失败，不会悄悄降级。
