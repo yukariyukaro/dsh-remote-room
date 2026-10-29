@@ -56,5 +56,11 @@ describe('remote_room_guide / shipped documentation locator', () => {
     expect(guide).toContain('docs/relay-deploy.md')
     expect(guide).toContain('src/host')
     expect(guide).toContain('src/guest')
+    // §13 is the host-facing onboarding script; keep its button names and invitation
+    // shape in sync with src/client/locale.ts and src/invite.ts.
+    expect(guide).toContain('## 13.')
+    expect(guide).toContain('生成邀请')
+    expect(guide).toContain('允许进入')
+    expect(guide).toContain("dsh-room://join/v2")
   })
 })
