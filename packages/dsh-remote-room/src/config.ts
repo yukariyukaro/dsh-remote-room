@@ -4,7 +4,8 @@ import Schema from '@deepseek-ai/schemastery'
 export const Config = Schema.object({
   relayUrl: Schema.string().default(''),
   relayCreateToken: Schema.string().role('secret').default(''),
-  invitationTtlMs: Schema.number().min(10_000).max(3_600_000).default(300_000),
+  /** Longest a single connection attempt may take. It bounds an attempt, never a room. */
+  attemptTtlMs: Schema.number().min(10_000).max(3_600_000).default(300_000),
   grantTtlMs: Schema.number().min(10_000).max(86_400_000).default(3_600_000),
   rpcTimeoutMs: Schema.number().min(1000).max(300_000).default(30_000),
   maxRooms: Schema.number().min(1).max(8).default(2),
@@ -17,7 +18,7 @@ export const Config = Schema.object({
 export interface Config {
   relayUrl: string
   relayCreateToken: string
-  invitationTtlMs: number
+  attemptTtlMs: number
   grantTtlMs: number
   rpcTimeoutMs: number
   maxRooms: number

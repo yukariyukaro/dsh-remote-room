@@ -105,6 +105,14 @@ describe('real WebSocket relay and bounded Duplex', () => {
     const closed = new Promise<void>(resolve => next.once('close', resolve)); controller.abort(); await closed;
     expect(next.destroyed).toBe(true);
   });
+  it('keeps an idle reservation alive while its host sends keepalives', async () => {
+    const { url } = await relay({ ttlMs: 200 }); const id = roomId();
+    const host = await raw(url, id, 'host');
+    const timer = setInterval(() => { if (host.readyState === WebSocket.OPEN) host.send('{"type":"keepalive"}'); }, 50);
+    try { await new Promise(resolve => setTimeout(resolve, 700)); } finally { clearInterval(timer); }
+    const guest = await raw(url, id, 'guest');
+    expect(guest.readyState).toBe(WebSocket.OPEN);
+  });
   it('bounds total session traffic even when a peer advertises fresh credit', async () => {
     const { url } = await relay({ maxSessionBytes: 256 }); const id = roomId();
     const host = await raw(url, id, 'host'); const guest = await raw(url, id, 'guest');
@@ -138,7 +146,9 @@ describe('real WebSocket relay and bounded Duplex', () => {
     };
     const worker = new RelayRoom(state, { ROOMS: { idFromName() {}, get() { throw new Error('not used'); } }, CREATE_TOKEN: 'test' });
     await ready;
-    expect(alarm).toBe(expiresAt);
+    // A recovered room is live again, so recovery re-arms the idle timer at its current expiry.
+    expect(alarm).toBe((stored.get('room') as { expiresAt: number }).expiresAt);
+    expect(alarm).toBeGreaterThanOrEqual(expiresAt);
     expect(host.sent).toEqual([]); expect(guest.sent).toEqual([]); // no replayed hello/paired or credits
     worker.webSocketMessage(host, new Uint8Array([0, 1, 255]).buffer);
     expect(guest.sent).toEqual([new Uint8Array([0, 1, 255])]);

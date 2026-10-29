@@ -1,6 +1,6 @@
 {
   "name": "@yukariyukaro/dsh-remote-room",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Consent-based remote workspaces for DeepSeek Harness",
   "license": "MIT",
   "author": "yukariyukaro",

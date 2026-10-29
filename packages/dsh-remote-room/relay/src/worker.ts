@@ -80,13 +80,16 @@ export class RelayRoom {
         room.shutdown(1008, 'Invalid recovered room');
         for (const socket of sockets) { try { socket.close(1008, 'Invalid recovered room'); } catch {} }
       } finally { this.recovering = false; }
-      await ctx.storage.setAlarm(meta.expiresAt);
+      // Recovery re-arms the idle timer on the room's current (possibly extended) expiry.
+      await ctx.storage.put('room', { expiresAt: room.expiresAt });
+      await ctx.storage.setAlarm(room.expiresAt);
     });
   }
   private makeRoom(expiresAt: number): Room {
     const room = new Room(this.config, expiresAt,
       member => (member.socket as Socket).serializeAttachment(member.state),
-      () => { if (!this.recovering) this.room = undefined; });
+      () => { if (!this.recovering) this.room = undefined; },
+      expiresAt => { void this.ctx.storage.put('room', { expiresAt }).then(() => this.ctx.storage.setAlarm(expiresAt)); });
     this.room = room; return room;
   }
   async fetch(request: Request): Promise<Response> {
@@ -100,11 +103,11 @@ export class RelayRoom {
     if (room && (room.closed || room.expiresAt <= Date.now())) {
       room.shutdown(1008, 'Room expired'); room = undefined;
     }
-    // Persist a tombstone until TTL: no same-ID reconnect after disconnect/hibernation.
-    const meta = await this.ctx.storage.get<{ expiresAt: number }>('room');
+    // A room id is not a secret: the invitation certificate pins the room identity, so
+    // the host may re-claim the same id after a disconnect. Only a live host blocks it.
     if (route.role === 'host') {
       if (!validToken(route.token)) return new Response('Unauthorized', { status: 401 });
-      if (room || (meta && meta.expiresAt > Date.now())) return new Response('Conflict', { status: 409 });
+      if (room) return new Response('Conflict', { status: 409 });
       room = this.makeRoom(Date.now() + this.config.ttlMs);
       await this.ctx.storage.put('room', { expiresAt: room.expiresAt });
       await this.ctx.storage.setAlarm(room.expiresAt);

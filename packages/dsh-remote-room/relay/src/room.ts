@@ -43,9 +43,25 @@ export interface Member { socket: Endpoint; state: Attachment }
 export class Room {
   readonly members = new Map<Role, Member>();
   closed = false;
-  constructor(readonly config: Limits, readonly expiresAt: number,
+  private expires: number;
+  constructor(readonly config: Limits, expiresAt: number,
     private readonly persist: (member: Member) => void = () => {},
-    private readonly onClosed: () => void = () => {}) {}
+    private readonly onClosed: () => void = () => {},
+    private readonly onExtend: (expiresAt: number) => void = () => {}) { this.expires = expiresAt; }
+  /**
+   * A reservation is owned by its live host connection, not by a wall clock: the TTL
+   * is an idle timeout, refreshed by traffic, not a deadline set when the room opens.
+   * Extensions are throttled to a quarter TTL so a busy room does not churn storage.
+   */
+  get expiresAt(): number { return this.expires; }
+  touch(): void {
+    if (this.closed) return;
+    const extended = Date.now() + this.config.ttlMs;
+    if (extended - this.expires <= Math.floor(this.config.ttlMs / 4)) return;
+    this.expires = extended;
+    for (const member of this.members.values()) { member.state.expiresAt = extended; this.persist(member); }
+    this.onExtend(extended);
+  }
   add(role: Role, socket: Endpoint, restored?: Attachment): void {
     if (this.closed || Date.now() >= this.expiresAt) throw new Error('Room expired');
     if (this.members.has(role) || (role === 'guest' && !this.members.has('host')))
@@ -56,6 +72,7 @@ export class Room {
     } };
     this.members.set(role, member);
     this.persist(member);
+    this.touch();
     if (restored) return;
     this.send(member, JSON.stringify({ type: 'hello', version: 1,
       maxMessageBytes: this.config.maxMessageBytes, maxBufferedBytes: this.config.maxBufferedBytes }));
@@ -92,11 +109,14 @@ export class Room {
         state.rateMessages > this.config.maxMessagesPerSecond || state.rateBytes > this.config.maxBytesPerSecond) {
       this.shutdown(1008, 'Rate limit'); return;
     }
+    this.touch();
     const peer = this.peer(role);
     if (typeof data === 'string') {
       if (size > 128) { this.shutdown(1008, 'Invalid control'); return; }
       let value: { type?: unknown; bytes?: unknown };
       try { value = JSON.parse(data) as typeof value; } catch { this.shutdown(1008, 'Invalid control'); return; }
+      // A waiting host has no peer to talk to; this frame only proves it is still there.
+      if (value?.type === 'keepalive') return;
       if (!value || value.type !== 'credit' || typeof value.bytes !== 'number' ||
           !Number.isSafeInteger(value.bytes) || value.bytes <= 0 ||
           state.receiveCredit + value.bytes > this.config.maxBufferedBytes) {

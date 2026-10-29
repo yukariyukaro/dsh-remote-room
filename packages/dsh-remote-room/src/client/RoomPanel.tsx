@@ -43,6 +43,9 @@ export function RoomPanel(props: RoomPanelProps): JSX.Element {
   }, [api])
 
   const room: RoomSnapshot | undefined = [...snapshot.state.rooms].reverse().find(value => LIVE.has(value.phase))
+  // A failed attempt is exactly what the live list hides: without this the form silently
+  // reappears and the operator never learns why the join ended.
+  const ended: RoomSnapshot | undefined = room ? undefined : [...snapshot.state.rooms].reverse().find(value => value.role === 'guest' && value.phase === 'failed')
   const open = info ? (address: string) => info.tab.actions.openResource(address, { preferNewPane: true }) : props.canOpenFiles ? props.openFile : undefined
 
   const run = (operation: () => Promise<void>): void => {
@@ -57,6 +60,20 @@ export function RoomPanel(props: RoomPanelProps): JSX.Element {
   if (!room && settings === undefined) {
     // Preferences carry the remembered relay and directory; render once, not twice with a stale first pass.
     body = <div className="rr-stage"><p className="rr-hint">{t('loading')}</p></div>
+  } else if (ended) {
+    body = (
+      <div className="rr-stage">
+        <header className="rr-hero rr-hero-room">
+          <div className="rr-herotext"><h1>{t('endedTitle')}</h1><p className="rr-mono">{ended.error ?? ''}</p></div>
+          <Pill tone="warning">{t('statusFailed')}</Pill>
+        </header>
+        <Card>
+          <p className="rr-body">{t('endedHint')}</p>
+          <button type="button" className="rr-btn" disabled={busy}
+            onClick={() => run(async () => { await mutate(api.close(ended.id)) })}>{t('dismiss')}</button>
+        </Card>
+      </div>
+    )
   } else if (!room) {
     // The active workspace is the default directory; a remembered pick only fills the gap.
     body = <ShareHome t={t} initialRoot={cwd || settings?.lastRoot || ''} settings={settings} busy={busy}

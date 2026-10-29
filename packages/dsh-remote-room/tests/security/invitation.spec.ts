@@ -17,6 +17,15 @@ describe('v2 bearer invitation encoding', () => {
     expect(url.href.length).toBeLessThan(8192)
     expect(invitationUrl(parsed)).toBe(created.url)
   })
+  it('keeps the credential window far beyond any share, so a link dies with its room', async () => {
+    const created = await createInvitation('wss://relay.example.test')
+    const certificate = new X509Certificate(created.invitation.credential.certificate)
+    // The certificate is a backstop for a leaked credential, not the invitation's deadline:
+    // the product rule is that a room, not a clock, ends a share.
+    expect(Date.parse(certificate.validTo) - Date.parse(certificate.validFrom)).toBeGreaterThanOrEqual(3650 * 86_400_000)
+    expect(Date.parse(certificate.validTo)).toBeGreaterThan(Date.now() + 365 * 86_400_000)
+    expect(Date.parse(certificate.validFrom)).toBeLessThanOrEqual(Date.now())
+  })
   it('rejects old versions, duplicated fields, malformed keys and room swaps instead of falling back', async () => {
     const a = await createInvitation('ws://127.0.0.1:12345')
     const b = await createInvitation('ws://127.0.0.1:12345')

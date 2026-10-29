@@ -30,8 +30,11 @@ export async function createRoomCredential(roomId: string): Promise<RoomCredenti
   const certificate = await x509.X509CertificateGenerator.createSelfSigned({
     serialNumber: randomBytes(16).toString('hex'),
     name: `CN=${hostname}`,
+    // A room ends when its host destroys it, so the certificate window must never be the
+    // thing that expires a share. This is a decade-long backstop for a leaked credential;
+    // access is still granted only by host approval, never by certificate validity.
     notBefore: new Date(Date.now() - 300_000),
-    notAfter: new Date(Date.now() + 7 * 86_400_000),
+    notAfter: new Date(Date.now() + 3650 * 86_400_000),
     signingAlgorithm: { name: 'ECDSA', hash: 'SHA-256' },
     // Node 24's WebCrypto KeyUsage union additionally includes post-quantum
     // encapsulation usages absent from DOM typings. These generated EC keys

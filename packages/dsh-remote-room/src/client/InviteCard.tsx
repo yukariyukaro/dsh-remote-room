@@ -1,5 +1,5 @@
-/** Waiting screen: the invitation, its remaining life, and the one decision the owner makes. */
-import { useEffect, useState } from 'react'
+/** Waiting screen: the invitation and the one decision the owner makes. */
+import { useState } from 'react'
 import type { RoomSnapshot } from './contracts.ts'
 import type { Translate } from './locale.ts'
 import { Callout, Card, CardHead, Pill } from './ui.tsx'
@@ -13,20 +13,6 @@ export interface InviteCardProps {
   onApprove(): void
   onReject(): void
   onClose(): void
-}
-
-/** Counts down to the invitation deadline; re-renders once per second, no timers after expiry. */
-function Countdown({ until, t }: { until: number; t: Translate }): JSX.Element | null {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (until <= Date.now()) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [until])
-  const left = Math.max(0, until - now)
-  const seconds = Math.floor(left / 1000)
-  const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
-  return <span className="rr-countdown" data-expired={left === 0} role="timer">{left === 0 ? t('invitationExpired') : `${t('invitationLeft')} ${text}`}</span>
 }
 
 export function InviteCard({ t, room, invitation, busy, onApprove, onReject, onClose }: InviteCardProps): JSX.Element {
@@ -62,7 +48,7 @@ export function InviteCard({ t, room, invitation, busy, onApprove, onReject, onC
           </div>
         </Card>
         : <Card>
-          <CardHead title={t('waitingTitle')} accessory={room.invitationExpiresAt === undefined ? undefined : <Countdown until={room.invitationExpiresAt} t={t} />} />
+          <CardHead title={t('waitingTitle')} />
           <p className="rr-body">{t('waitingHint')}</p>
           <div className="rr-invitebox">
             <textarea className="rr-invite rr-mono" readOnly rows={3} value={invitation} onFocus={event => event.currentTarget.select()} aria-label={t('invitation')} />

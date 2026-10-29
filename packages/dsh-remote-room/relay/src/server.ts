@@ -45,14 +45,18 @@ export async function startRelay(options: StartRelayOptions): Promise<{ url: str
     // handleUpgrade's callback is synchronous: reservation and add cannot race another upgrade.
     wss.handleUpgrade(request, socket, head, (ws) => {
       if (!room) {
-        let timer: ReturnType<typeof setTimeout>;
-        room = new Room(config, Date.now() + config.ttlMs, undefined, () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const arm = (expiresAt: number): void => {
+          if (timer) { clearTimeout(timer); timers.delete(timer); }
+          timer = setTimeout(() => created.shutdown(1008, 'Room expired'), Math.max(1, expiresAt - Date.now()));
+          timer.unref(); timers.add(timer);
+        };
+        const created = new Room(config, Date.now() + config.ttlMs, undefined, () => {
           rooms.delete(route.roomId); if (timer) { clearTimeout(timer); timers.delete(timer); }
-        });
-        rooms.set(route.roomId, room);
-        const created = room;
-        timer = setTimeout(() => created.shutdown(1008, 'Room expired'), config.ttlMs);
-        timer.unref(); timers.add(timer);
+        }, arm);
+        rooms.set(route.roomId, created);
+        room = created;
+        arm(created.expiresAt);
       }
       const active = room;
       const endpoint = {

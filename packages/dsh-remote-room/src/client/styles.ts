@@ -67,8 +67,6 @@ export const styles = `
 .rr-callout[data-tone=danger]{background:color-mix(in oklab,var(--dsw-alias-state-error-primary) 9%,transparent);color:var(--dsw-alias-state-error-primary)}
 .rr-callout[data-tone=warning]{background:color-mix(in oklab,var(--dsw-alias-state-warn-primary) 10%,transparent);color:var(--dsw-alias-state-warn-primary)}
 .rr-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.02em;white-space:nowrap;flex:none;background:var(--rr-layer-2);color:var(--rr-ink-soft);border:1px solid var(--rr-line)}
-.rr-countdown{font-family:var(--rr-mono);font-size:11px;font-variant-numeric:tabular-nums;color:var(--rr-ink-soft);white-space:nowrap}
-.rr-countdown[data-expired=true]{color:var(--dsw-alias-state-error-primary)}
 .rr-summary{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--rr-line);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--rr-ink-soft);font-size:11.5px}
 .rr-summary-label{white-space:nowrap}
 .rr-summary-value{flex:1;min-width:0;font-family:var(--rr-mono);font-size:11.5px;color:var(--rr-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

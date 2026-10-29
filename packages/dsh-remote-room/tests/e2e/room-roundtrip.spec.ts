@@ -50,7 +50,7 @@ async function setup() {
   cleanup.push(() => audit.close())
   const relay = await startRelay({ host: '127.0.0.1', port: 0 })
   cleanup.push(() => relay.close())
-  const config = Config({ invitationTtlMs: 30_000, grantTtlMs: 30_000, rpcTimeoutMs: 3000 })
+  const config = Config({ attemptTtlMs: 30_000, grantTtlMs: 30_000, rpcTimeoutMs: 3000 })
   const host = new RemoteRoomManager(config, () => new FileRoomBackend(ctx.fs, audit, config))
   const guest = new RemoteRoomManager(config, () => { throw new Error('Guest must not allocate host capabilities') })
   cleanup.push(() => guest.dispose(), () => host.dispose())

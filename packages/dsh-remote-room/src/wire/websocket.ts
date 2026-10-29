@@ -32,15 +32,25 @@ class RelayDuplex extends Duplex {
   private refillScheduled = false;
   private closeTimer?: ReturnType<typeof setTimeout>;
   private readonly abort = () => this.destroy(new Error('Relay connection aborted'));
+  private readonly keepalive: ReturnType<typeof setInterval>;
   constructor(private readonly ws: WebSocket, private readonly options: RelayOptions,
     private readonly queueLimit: number, private readonly frameLimit: number) {
     super({ readableHighWaterMark: queueLimit, writableHighWaterMark: queueLimit, allowHalfOpen: false });
+    // A room expires only when it goes idle; a host waiting for its first guest has no
+    // peer to exchange bytes with, so it keeps its reservation warm in a control frame.
+    this.keepalive = setInterval(() => {
+      if (this.ws.readyState !== WebSocket.OPEN) return;
+      this.ws.send('{"type":"keepalive"}', () => {});
+    }, 60_000);
+    this.keepalive.unref();
     ws.on('message', this.message);
     ws.on('error', this.socketError);
     ws.on('close', this.socketClose);
     options.signal?.addEventListener('abort', this.abort, { once: true });
     if (options.signal?.aborted) this.abort();
   }
+  /** Relay-level pairing, before any TLS record exists. */
+  get isPaired(): boolean { return this.paired; }
   private socketError = (error: Error) => { this.destroy(error); };
   private socketClose = (code: number) => {
     if (code === 1000) { this.push(null); this.destroy(); }
@@ -146,6 +156,7 @@ class RelayDuplex extends Duplex {
     this.ws.close(1000, 'Stream ended'); callback();
   }
   override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    clearInterval(this.keepalive);
     if (this.timer) clearTimeout(this.timer);
     this.options.signal?.removeEventListener('abort', this.abort);
     this.ws.off('message', this.message);
