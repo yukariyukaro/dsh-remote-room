@@ -8,6 +8,16 @@ DSH_REMOTE_ROOM_RELAY=wss://<你的实例>.workers.dev
 DSH_REMOTE_ROOM_RELAY_TOKEN=<部署时写入的 CREATE_TOKEN>
 ```
 
+## 本机已部署的中继
+
+2026-10-29 在 Cloudflare 上部署的实例（令牌只写在本机 .env，不进仓库）：
+
+```text
+wss://dsh-remote-room-relay.yukariyukaro.workers.dev
+```
+
+填法：房主在 设置 →「远程工作区」→「谁能加入」选「跨网络」→「中继地址」粘贴上面这行 →「保存」。地址会被记住，之后共享自动使用，无需每次输入。
+
 ## 用真实公网链路验证
 
 部署完成后，一条命令就能证明"两端经这个 wss 端点配对、完成 mTLS 握手并授权一次调用"：
