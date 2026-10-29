@@ -13,6 +13,7 @@ import { RelayHost, bundledRelay } from './host/relay-host.ts'
 import { resolveShare } from './share.ts'
 import { registerRemoteTools } from './guest/tools.ts'
 import { registerRemoteProcessTools } from './guest/process-tools.ts'
+import { registerGuideTool } from './guide.ts'
 
 export { Config }
 export const name = 'remote-room'
@@ -48,4 +49,5 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   controller.mount()
   ctx.effect(() => registerRemoteTools(ctx, manager), 'remote-room: explicit remote tools')
   ctx.effect(() => registerRemoteProcessTools(ctx, manager), 'remote-room: explicit remote process tools')
+  ctx.effect(() => registerGuideTool(ctx), 'remote-room: guide locator')
 }

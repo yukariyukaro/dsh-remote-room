@@ -30,7 +30,9 @@ dsh-resource://remote-room-file/room/<id>/epoch/<epoch>/path/<逐段编码的房
 dsh plugin --profile web add @yukariyukaro/dsh-remote-room
 ```
 
-装好后在 DSH 设置 → **远程房间** 完成共享或加入。跨网络共享前，按 [docs/relay-deploy.md](docs/relay-deploy.md) 准备一台中继，并用环境变量 `DSH_REMOTE_ROOM_RELAY` / `DSH_REMOTE_ROOM_RELAY_TOKEN` 或界面里填一次提供给它。
+装好后在 DSH 设置 → **远程工作区** 完成共享或加入。跨网络共享前，按 [docs/relay-deploy.md](docs/relay-deploy.md) 准备一台中继，并用环境变量 `DSH_REMOTE_ROOM_RELAY` / `DSH_REMOTE_ROOM_RELAY_TOKEN` 或界面里填一次提供给它。
+
+**给非技术用户 / 给 AI**：本包随发 [`GUIDE.md`](GUIDE.md) —— 安装口令（给零电脑基础的人，粘进对话框即可）、房主/访客流程、权限三档、中继、排障、升级与卸载，外加一张「改哪里」的源码索引。装好后 DSH 里的 agent 可调用 `remote_room_guide` 拿到 `GUIDE.md` 与 `src/` 的绝对路径和章节索引，按需读取；不在系统提示词里注入正文。
 
 **从源码运行**：开发目标是 **DSH >=0.2.1-rc.2 <0.2.2、Node >=24.9**。当前本机验证使用 Node 24.21.0 / OpenSSL 3.5.8（rc.4 跑完整 E2E，rc.2 做过实机 UI 与共享验证）；其他 OS 尚未形成支持矩阵。
 
